@@ -1,0 +1,436 @@
+{
+  "info": {
+    "name": "JobRadar API",
+    "description": "Complete API collection for JobRadar — self-hosted multi-user job aggregator.\n\n## Setup\n1. Run the dev stack: `docker compose -f docker-compose.dev.yml up -d`\n2. Hit **Login** — the token is saved automatically to `{{token}}`.\n3. All other requests use `{{token}}` via the collection-level Authorization header.\n\n## Variables\n- `base_url` — backend base URL (default: `http://localhost:8001`)\n- `token` — JWT bearer token, auto-set by the Login request\n- `job_id` — set manually after listing jobs\n- `task_id` — auto-set by Trigger Pipeline\n- `cv_id` — auto-set by Upload CV",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8001", "type": "string" },
+    { "key": "token",    "value": "",                     "type": "string" },
+    { "key": "job_id",   "value": "1",                    "type": "string" },
+    { "key": "task_id",  "value": "",                     "type": "string" },
+    { "key": "cv_id",    "value": "1",                    "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+
+    {
+      "name": "Auth",
+      "description": "Register, log in, and log out. Login auto-saves the token.",
+      "item": [
+
+        {
+          "name": "Register",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api","auth","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Jane Smith\",\n  \"email\": \"jane@example.com\",\n  \"password\": \"securepass123\",\n  \"confirm_password\": \"securepass123\"\n}"
+            },
+            "description": "Create a new user account. Returns the created user. Email must be unique."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.access_token) {",
+                  "    pm.collectionVariables.set('token', json.access_token);",
+                  "    console.log('Token saved:', json.access_token.substring(0, 30) + '...');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api","auth","login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jane@example.com\",\n  \"password\": \"securepass123\"\n}"
+            },
+            "description": "Authenticate and receive a Bearer JWT. The token is automatically saved to `{{token}}` via the Tests script."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.collectionVariables.set('token', '');"],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/auth/logout", "host": ["{{base_url}}"], "path": ["api","auth","logout"] },
+            "description": "Token-based logout — clears `{{token}}` in Postman. No server-side action is required."
+          },
+          "response": []
+        }
+
+      ]
+    },
+
+    {
+      "name": "Jobs",
+      "description": "Browse, filter, score, and manage job listings. All data is scoped to the authenticated user.",
+      "item": [
+
+        {
+          "name": "List Jobs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/jobs?page=1&limit=20&sort_by=fetched_at&order=desc",
+              "host": ["{{base_url}}"],
+              "path": ["api","jobs"],
+              "query": [
+                { "key": "page",      "value": "1",          "description": "Page number (1-indexed)" },
+                { "key": "limit",     "value": "20",         "description": "Results per page (max 100)" },
+                { "key": "sort_by",   "value": "fetched_at", "description": "score | posted_at | fetched_at | platform | title | status" },
+                { "key": "order",     "value": "desc",       "description": "asc | desc" },
+                { "key": "platform",  "value": "",           "description": "e.g. himalayas", "disabled": true },
+                { "key": "status",    "value": "",           "description": "new | interested | applied | skipped", "disabled": true },
+                { "key": "score_min", "value": "",           "description": "0–100", "disabled": true },
+                { "key": "score_max", "value": "",           "description": "0–100", "disabled": true },
+                { "key": "title",     "value": "",           "description": "keyword search in title", "disabled": true }
+              ]
+            },
+            "description": "Paginated list of jobs for the authenticated user. Toggle the disabled query params to filter."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Get Job Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/{{job_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api","jobs","{{job_id}}"]
+            },
+            "description": "Full detail for a single job including raw description JSON and CV analysis."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Update Job Status",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/{{job_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["api","jobs","{{job_id}}","status"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"interested\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Set tracking status: `new` | `interested` | `applied` | `skipped`."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Match Job Against CV",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/{{job_id}}/match",
+              "host": ["{{base_url}}"],
+              "path": ["api","jobs","{{job_id}}","match"]
+            },
+            "description": "Score a job against the user's active CV using keyword + tech-stack matching. Returns score (0–100), summary, strengths, gaps, and suggestions."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Save Score Manually",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/{{job_id}}/score",
+              "host": ["{{base_url}}"],
+              "path": ["api","jobs","{{job_id}}","score"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"score\": 82.0,\n  \"analysis\": {\n    \"summary\": \"Good match for backend role\",\n    \"strengths\": [\"Python\", \"PostgreSQL\"],\n    \"gaps\": [\"Kubernetes\"],\n    \"suggestions\": [\"Mention distributed systems experience\"]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Manually override or set a score and analysis without running the CV matcher."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Trigger Job Pipeline",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.task_id) {",
+                  "    pm.collectionVariables.set('task_id', json.task_id);",
+                  "    console.log('Task ID saved:', json.task_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/trigger",
+              "host": ["{{base_url}}"],
+              "path": ["api","jobs","trigger"]
+            },
+            "description": "Manually trigger the daily job pipeline for the current user. Task ID is saved to `{{task_id}}` automatically."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Check Task Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/task/{{task_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api","jobs","task","{{task_id}}"]
+            },
+            "description": "Poll a Celery task (pipeline or match-all). Status: PENDING | STARTED | PROGRESS | SUCCESS | FAILURE."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Delete Job",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/{{job_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api","jobs","{{job_id}}"]
+            },
+            "description": "Permanently delete a single job by ID."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Delete All Jobs",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/jobs",
+              "host": ["{{base_url}}"],
+              "path": ["api","jobs"]
+            },
+            "description": "Permanently delete ALL jobs for the authenticated user. CV, filters, and user account are not affected."
+          },
+          "response": []
+        }
+
+      ]
+    },
+
+    {
+      "name": "CV",
+      "description": "Upload and manage CV versions. The active CV is used for job matching.",
+      "item": [
+
+        {
+          "name": "Upload CV",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.id) {",
+                  "    pm.collectionVariables.set('cv_id', String(json.id));",
+                  "    console.log('CV ID saved:', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/cv/upload",
+              "host": ["{{base_url}}"],
+              "path": ["api","cv","upload"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "Select your PDF CV (max 10 MB)"
+                }
+              ]
+            },
+            "description": "Upload a PDF CV. Magic-bytes validated. Extracted text is summarised and stored. CV is set as active immediately. CV ID is saved to `{{cv_id}}`."
+          },
+          "response": []
+        },
+
+        {
+          "name": "List CV Versions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/cv",
+              "host": ["{{base_url}}"],
+              "path": ["api","cv"]
+            },
+            "description": "List all CV versions uploaded by the authenticated user, newest first."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Get Active CV",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/cv/active",
+              "host": ["{{base_url}}"],
+              "path": ["api","cv","active"]
+            },
+            "description": "Return the currently active CV version."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Activate CV Version",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/cv/{{cv_id}}/activate",
+              "host": ["{{base_url}}"],
+              "path": ["api","cv","{{cv_id}}","activate"]
+            },
+            "description": "Set a specific CV version as active. All other versions for this user are deactivated."
+          },
+          "response": []
+        }
+
+      ]
+    },
+
+    {
+      "name": "Filters",
+      "description": "Configure job pre-filter preferences. Applied at pipeline time — non-matching jobs are discarded before storage.",
+      "item": [
+
+        {
+          "name": "Get Filters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/filters",
+              "host": ["{{base_url}}"],
+              "path": ["api","filters"]
+            },
+            "description": "Return the current job pre-filter preferences for the authenticated user."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Save Filters",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/filters",
+              "host": ["{{base_url}}"],
+              "path": ["api","filters"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role_titles\": [\"Backend Engineer\", \"Software Engineer\", \"Python Developer\"],\n  \"experience_level\": [\"mid\", \"senior\"],\n  \"location_type\": [\"remote\"],\n  \"location_region\": [\"Anywhere\", \"Asia\"],\n  \"tech_stack\": [\"Python\", \"FastAPI\", \"Docker\", \"PostgreSQL\"],\n  \"min_score_threshold\": 50.0\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create or update job pre-filter preferences. All fields are optional — omit any to skip that filter."
+          },
+          "response": []
+        }
+
+      ]
+    },
+
+    {
+      "name": "Health",
+      "description": "System health check.",
+      "item": [
+
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/health",
+              "host": ["{{base_url}}"],
+              "path": ["api","health"]
+            },
+            "description": "Returns `{\"status\": \"ok\", \"env\": \"development\"}`. No auth required."
+          },
+          "response": []
+        }
+
+      ]
+    }
+
+  ]
+}

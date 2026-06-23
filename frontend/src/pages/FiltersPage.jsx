@@ -102,6 +102,7 @@ export default function FiltersPage() {
     location_region: [],
     tech_stack: [],
     min_score_threshold: 0,
+    max_age_hours: '',
   })
 
   const { data, isLoading } = useQuery({
@@ -117,11 +118,15 @@ export default function FiltersPage() {
       location_region: data.location_region || [],
       tech_stack: data.tech_stack || [],
       min_score_threshold: data.min_score_threshold || 0,
+      max_age_hours: data.max_age_hours ?? '',
     })
   }, [data])
 
   const saveMutation = useMutation({
-    mutationFn: () => filtersApi.save(form),
+    mutationFn: () => filtersApi.save({
+      ...form,
+      max_age_hours: form.max_age_hours === '' ? null : Number(form.max_age_hours),
+    }),
     onSuccess: () => {
       toast.success('Filters saved')
       queryClient.invalidateQueries(['filters'])
@@ -220,6 +225,38 @@ export default function FiltersPage() {
             </span>
           </div>
           <p className="text-xs text-slate-600 mt-2 font-body">Jobs scored below this threshold are hidden from the dashboard</p>
+        </div>
+
+        {/* Max job age */}
+        <div className="card p-5">
+          <label className="label">Posted Within (hours)</label>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              min="1"
+              className="input w-32 text-sm"
+              placeholder="e.g. 72"
+              value={form.max_age_hours}
+              onChange={e => {
+                const v = e.target.value
+                set('max_age_hours', v === '' ? '' : Math.max(1, parseInt(v, 10) || 1))
+              }}
+            />
+            <span className="text-sm text-slate-400 font-body">hours</span>
+            {form.max_age_hours !== '' && (
+              <button
+                onClick={() => set('max_age_hours', '')}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors font-body"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-slate-600 mt-2 font-body">
+            {form.max_age_hours
+              ? `Only jobs posted in the last ${form.max_age_hours}h are saved and shown`
+              : 'No limit — all jobs within the fetch window are included'}
+          </p>
         </div>
 
         {/* Save button (bottom) */}

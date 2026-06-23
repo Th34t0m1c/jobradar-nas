@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../api/client'
-import { Spinner } from '../components/ui'
+import { Spinner, PasswordRules, isPasswordStrong } from '../components/ui'
 import { Radio, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -20,12 +20,12 @@ export default function RegisterPage() {
   async function handleSubmit(e) {
     e.preventDefault()
 
-    if (form.password !== form.confirm_password) {
-      toast.error('Passwords do not match')
+    if (!isPasswordStrong(form.password)) {
+      toast.error('Password does not meet the requirements')
       return
     }
-    if (form.password.length < 8) {
-      toast.error('Password must be at least 8 characters')
+    if (form.password !== form.confirm_password) {
+      toast.error('Passwords do not match')
       return
     }
 
@@ -101,7 +101,7 @@ export default function RegisterPage() {
                   className="input pr-10"
                   type={showPass ? 'text' : 'password'}
                   autoComplete="new-password"
-                  placeholder="Min. 8 characters"
+                  placeholder="Strong password"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   required
@@ -114,6 +114,7 @@ export default function RegisterPage() {
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <PasswordRules password={form.password} />
             </div>
 
             <div>

@@ -27,6 +27,7 @@ class EmplloScraper(BaseScraper):
             async with httpx.AsyncClient(
                 timeout=30,
                 headers={"User-Agent": "Mozilla/5.0 (compatible; JobRadar/1.0)"},
+                follow_redirects=True,
             ) as client:
                 while True:
                     response = await client.get(

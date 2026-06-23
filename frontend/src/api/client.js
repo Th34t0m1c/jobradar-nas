@@ -1,18 +1,41 @@
 import axios from 'axios'
 
+export const TOKEN_KEY = 'access_token'
+
 const api = axios.create({
   baseURL: '/api',
-  withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Redirect to login on 401
+// Inject Bearer token on every request
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem(TOKEN_KEY)
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+// Guard against multiple concurrent 401s all triggering a redirect
+let isRedirecting = false
+
+// On 401: clear token and redirect to login (skip for auth endpoints — let them throw)
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
-      window.location.href = '/login'
-      return new Promise(() => {}) // suppress onError — page is navigating away
+    const url = err.config?.url ?? ''
+    const isAuthEndpoint =
+      url.includes('/auth/login') ||
+      url.includes('/auth/register') ||
+      url.includes('/auth/forgot-password') ||
+      url.includes('/auth/reset-password')
+    if (err.response?.status === 401 && !isAuthEndpoint) {
+      if (!isRedirecting) {
+        isRedirecting = true
+        localStorage.removeItem(TOKEN_KEY)
+        window.location.href = '/login'
+      }
+      return new Promise(() => {}) // suppress onError toast — page is navigating away
     }
     return Promise.reject(err)
   }
@@ -25,6 +48,13 @@ export const authApi = {
   login: (email, password) =>
     api.post('/auth/login', { email, password }),
   logout: () => api.post('/auth/logout'),
+  me: () => api.get('/auth/me'),
+  updateProfile: (data) => api.patch('/auth/profile', data),
+  changePassword: (data) => api.post('/auth/change-password', data),
+  forgotPassword: (email) =>
+    api.post('/auth/forgot-password', { email }),
+  resetPassword: (token, new_password, confirm_password) =>
+    api.post('/auth/reset-password', { token, new_password, confirm_password }),
 }
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
@@ -35,6 +65,7 @@ export const jobsApi = {
   saveScore: (id, data) => api.patch(`/jobs/${id}/score`, data),
   match: (id) => api.post(`/jobs/${id}/match`),
   delete: (id) => api.delete(`/jobs/${id}`),
+  deleteAll: () => api.delete('/jobs'),
   trigger: () => api.post('/jobs/trigger'),
   taskStatus: (taskId) => api.get(`/jobs/task/${taskId}`),
 }
@@ -51,6 +82,7 @@ export const cvApi = {
     })
   },
   activate: (id) => api.post(`/cv/${id}/activate`),
+  delete: (id) => api.delete(`/cv/${id}`),
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────

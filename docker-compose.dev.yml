@@ -53,10 +53,7 @@ services:
       - ./backend:/app
       - cv_data:/cv_data
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
+      - fastapi
     networks:
       - app_network
 
@@ -70,6 +67,22 @@ services:
     volumes:
       - ./backend:/app
       - cv_data:/cv_data
+    depends_on:
+      - fastapi
+    networks:
+      - app_network
+
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app flower --port=5555
+    env_file: .env
+    volumes:
+      - ./backend:/app
+    ports:
+      - "5555:5555"
     depends_on:
       - redis
       - celery-worker

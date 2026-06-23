@@ -30,6 +30,8 @@ export const PLATFORM_CONFIG = {
   empllo:         { label: 'Empllo',             short: 'EMP', color: 'text-pink-400' },
   remotive:       { label: 'Remotive',           short: 'RMT', color: 'text-indigo-400' },
   arbeitnow:      { label: 'Arbeitnow',          short: 'ABN', color: 'text-yellow-400' },
+  jobicy:         { label: 'Jobicy',             short: 'JBC', color: 'text-rose-400' },
+  remoteco:       { label: 'Remote.co',          short: 'RCO', color: 'text-cyan-400' },
 }
 
 export function formatDate(dateStr) {

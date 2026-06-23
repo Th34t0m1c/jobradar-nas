@@ -1,10 +1,21 @@
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean,
-    DateTime, Text, JSON, ForeignKey
+    DateTime, Text, JSON, ForeignKey, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
 
 class User(Base):
@@ -20,19 +31,23 @@ class User(Base):
 
 class Job(Base):
     __tablename__ = "jobs"
+    __table_args__ = (
+        UniqueConstraint('fingerprint', 'user_id', name='uq_job_fingerprint_user'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     platform = Column(String(50), nullable=False, index=True)
     title = Column(String(255), nullable=False)
     company = Column(String(255), nullable=False)
-    location = Column(String(255), nullable=True)
+    location = Column(String(1000), nullable=True)
     job_type = Column(String(50), nullable=True)           # remote/hybrid/onsite
     experience_level = Column(String(50), nullable=True)   # junior/mid/senior
-    location_region = Column(String(100), nullable=True)
+    location_region = Column(String(500), nullable=True)
     tech_stack = Column(JSON, nullable=True)               # list of strings
     description_json = Column(JSON, nullable=True)         # full normalized job data
     url = Column(String(1000), nullable=False)
-    fingerprint = Column(String(64), unique=True, index=True, nullable=False)
+    fingerprint = Column(String(64), index=True, nullable=False)
     score = Column(Float, nullable=True)
     analysis = Column(Text, nullable=True)
     status = Column(String(20), default="new", nullable=False)  # new/interested/applied/skipped
@@ -46,6 +61,7 @@ class CVVersion(Base):
     __tablename__ = "cv_versions"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     filename = Column(String(255), nullable=False)
     file_path = Column(String(500), nullable=False)
     summary = Column(Text, nullable=True)
@@ -57,12 +73,14 @@ class UserFilter(Base):
     __tablename__ = "user_filters"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     role_titles = Column(JSON, nullable=True)         # ["Backend Engineer", "Software Engineer"]
     experience_level = Column(JSON, nullable=True)    # ["mid", "senior"]
     location_type = Column(JSON, nullable=True)       # ["remote", "hybrid"]
     location_region = Column(JSON, nullable=True)     # ["Asia", "Anywhere"]
     tech_stack = Column(JSON, nullable=True)          # ["Python", "FastAPI", "Docker"]
     min_score_threshold = Column(Float, default=0.0)
+    max_age_hours = Column(Integer, nullable=True)   # only save/show jobs posted within this many hours
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     # CORS - comma-separated list of allowed frontend origins
     CORS_ORIGINS: str = "http://localhost:5173"
 
+    # Frontend URL (used in password reset emails)
+    FRONTEND_URL: str = "http://localhost:5173"
+
+    # Email / SMTP (for password reset)
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "noreply@jobradar.dev"
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

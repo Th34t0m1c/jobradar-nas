@@ -1,17 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, asc
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from typing import Optional
 from math import ceil
 import json
 
+from datetime import datetime, timezone, timedelta
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
-from app.models.models import Job, CVVersion
+from app.models.models import Job, CVVersion, User, UserFilter
 from app.schemas.schemas import (
     JobListItem, JobDetail, JobStatusUpdate, JobScoreUpdate,
     PaginatedJobResponse, TaskStatusResponse
 )
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -20,26 +25,41 @@ VALID_SORT_FIELDS = {"score", "posted_at", "fetched_at", "platform", "title", "s
 VALID_ORDERS = {"asc", "desc"}
 
 
-@router.get("", response_model=PaginatedJobResponse)
+@router.get(
+    "",
+    response_model=PaginatedJobResponse,
+    summary="List jobs",
+    description=(
+        "Paginated list of jobs for the authenticated user. "
+        "Supports filtering by platform, status, score range, and title keyword. "
+        "Sortable by score, posted_at, fetched_at, platform, title, or status."
+    ),
+)
 def list_jobs(
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
-    sort_by: str = Query(default="fetched_at"),
-    order: str = Query(default="desc"),
-    platform: Optional[str] = Query(default=None),
-    status: Optional[str] = Query(default=None),
-    score_min: Optional[float] = Query(default=None),
-    score_max: Optional[float] = Query(default=None),
-    title: Optional[str] = Query(default=None),
+    page: int = Query(default=1, ge=1, description="Page number (1-indexed)"),
+    limit: int = Query(default=20, ge=1, le=100, description="Results per page (max 100)"),
+    sort_by: str = Query(default="fetched_at", description="Field to sort by"),
+    order: str = Query(default="desc", description="Sort direction: asc or desc"),
+    platform: Optional[str] = Query(default=None, description="Filter by platform key e.g. himalayas"),
+    status: Optional[str] = Query(default=None, description="Filter by status: new / interested / applied / skipped"),
+    score_min: Optional[float] = Query(default=None, description="Minimum score (0–100)"),
+    score_max: Optional[float] = Query(default=None, description="Maximum score (0–100)"),
+    title: Optional[str] = Query(default=None, description="Case-insensitive title keyword search"),
     db: Session = Depends(get_db),
-    _: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     if sort_by not in VALID_SORT_FIELDS:
         sort_by = "fetched_at"
     if order not in VALID_ORDERS:
         order = "desc"
 
-    query = db.query(Job).filter(Job.is_deleted == False)
+    query = db.query(Job).filter(Job.is_deleted == False, Job.user_id == current_user.id)
+
+    # Apply saved max_age_hours preference
+    user_filter = db.query(UserFilter).filter(UserFilter.user_id == current_user.id).first()
+    if user_filter and user_filter.max_age_hours:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=user_filter.max_age_hours)
+        query = query.filter(Job.posted_at >= cutoff)
 
     if platform:
         query = query.filter(Job.platform == platform)
@@ -69,27 +89,39 @@ def list_jobs(
     )
 
 
-@router.get("/{job_id}", response_model=JobDetail)
+@router.get(
+    "/{job_id}",
+    response_model=JobDetail,
+    summary="Get job detail",
+    description="Full detail for a single job including raw description JSON and analysis.",
+)
 def get_job(
     job_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    job = db.query(Job).filter(Job.id == job_id, Job.is_deleted == False).first()
+    job = db.query(Job).filter(
+        Job.id == job_id, Job.is_deleted == False, Job.user_id == current_user.id
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
 
-@router.patch("/{job_id}/score")
+@router.patch(
+    "/{job_id}/score",
+    summary="Save score manually",
+    description="Manually save a score and analysis for a job. Use this to override or set a score without running the CV matcher.",
+)
 def save_job_score(
     job_id: int,
     body: JobScoreUpdate,
     db: Session = Depends(get_db),
-    _: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    """Save a manually entered score and analysis for a job."""
-    job = db.query(Job).filter(Job.id == job_id, Job.is_deleted == False).first()
+    job = db.query(Job).filter(
+        Job.id == job_id, Job.is_deleted == False, Job.user_id == current_user.id
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     job.score = max(0.0, min(100.0, body.score))
@@ -98,19 +130,25 @@ def save_job_score(
     return {"message": "Score saved"}
 
 
-@router.patch("/{job_id}/status")
+@router.patch(
+    "/{job_id}/status",
+    summary="Update job status",
+    description="Set the tracking status for a job. Valid values: `new`, `interested`, `applied`, `skipped`.",
+)
 def update_job_status(
     job_id: int,
     body: JobStatusUpdate,
     db: Session = Depends(get_db),
-    _: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     if body.status not in VALID_STATUSES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid status. Must be one of: {VALID_STATUSES}",
         )
-    job = db.query(Job).filter(Job.id == job_id, Job.is_deleted == False).first()
+    job = db.query(Job).filter(
+        Job.id == job_id, Job.is_deleted == False, Job.user_id == current_user.id
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -119,13 +157,31 @@ def update_job_status(
     return {"message": f"Status updated to '{body.status}'"}
 
 
-@router.delete("/{job_id}")
+@router.delete(
+    "",
+    summary="Delete all jobs",
+    description="Permanently delete every job belonging to the authenticated user. CV, filters, and user account are not affected.",
+)
+def delete_all_jobs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    count = db.query(Job).filter(Job.user_id == current_user.id).delete()
+    db.commit()
+    return {"message": f"Deleted {count} jobs"}
+
+
+@router.delete(
+    "/{job_id}",
+    summary="Delete a job",
+    description="Permanently delete a single job by ID.",
+)
 def delete_job(
     job_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    job = db.query(Job).filter(Job.id == job_id).first()
+    job = db.query(Job).filter(Job.id == job_id, Job.user_id == current_user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -134,18 +190,29 @@ def delete_job(
     return {"message": "Job deleted"}
 
 
-@router.post("/{job_id}/match")
+@router.post(
+    "/{job_id}/match",
+    summary="Match job against CV",
+    description=(
+        "Score a job against the user's active CV using keyword + tech-stack matching. "
+        "Returns a 0–100 score with summary, strengths, gaps, and suggestions. "
+        "Saves the result to the job record."
+    ),
+)
 def match_job_with_cv(
     job_id: int,
     db: Session = Depends(get_db),
-    _: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    """Score a job against the active CV using keyword-based matching."""
-    job = db.query(Job).filter(Job.id == job_id, Job.is_deleted == False).first()
+    job = db.query(Job).filter(
+        Job.id == job_id, Job.is_deleted == False, Job.user_id == current_user.id
+    ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    cv = db.query(CVVersion).filter(CVVersion.is_active == True).first()
+    cv = db.query(CVVersion).filter(
+        CVVersion.is_active == True, CVVersion.user_id == current_user.id
+    ).first()
     if not cv or not cv.summary:
         raise HTTPException(status_code=400, detail="No active CV found. Upload a CV first.")
 
@@ -165,13 +232,26 @@ def match_job_with_cv(
     return result
 
 
-@router.post("/trigger", response_model=TaskStatusResponse)
+@router.post(
+    "/trigger",
+    response_model=TaskStatusResponse,
+    summary="Trigger job pipeline",
+    description=(
+        "Manually trigger the daily job pipeline for the authenticated user. "
+        "Fetches from all active platforms, deduplicates, applies filters, and saves new jobs. "
+        "Returns a Celery task ID — poll `GET /api/jobs/task/{task_id}` for status."
+    ),
+)
+@limiter.limit("5/hour")
 def trigger_pipeline(
-    _: str = Depends(get_current_user),
+    request: Request,
+    current_user: User = Depends(get_current_user),
 ):
-    """Manually trigger the daily job pipeline."""
     from app.tasks.job_tasks import run_daily_job_pipeline
-    task = run_daily_job_pipeline.delay()
+    task = run_daily_job_pipeline.apply_async(
+        kwargs={"user_id": current_user.id},
+        headers={"user_id": current_user.id},
+    )
     return TaskStatusResponse(
         task_id=task.id,
         status="queued",
@@ -179,14 +259,24 @@ def trigger_pipeline(
     )
 
 
-
-@router.get("/task/{task_id}", response_model=TaskStatusResponse)
+@router.get(
+    "/task/{task_id}",
+    response_model=TaskStatusResponse,
+    summary="Check task status",
+    description="Poll the status of a background Celery task. Status values: PENDING, STARTED, PROGRESS, SUCCESS, FAILURE.",
+)
 def get_task_status(
     task_id: str,
-    _: str = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     from app.tasks.celery_app import celery_app
     result = celery_app.AsyncResult(task_id)
+
+    # Verify this task belongs to the requesting user
+    task_user_id = (result.info or {}).get("user_id") if isinstance(result.info, dict) else None
+    if result.status not in ("PENDING",) and task_user_id and task_user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Task not found")
+
     return TaskStatusResponse(
         task_id=task_id,
         status=result.status,

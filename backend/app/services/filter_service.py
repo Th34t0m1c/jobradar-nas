@@ -1,4 +1,5 @@
 from typing import List, Tuple
+from datetime import datetime, timezone, timedelta
 from app.services.scrapers.base import NormalizedJob
 from app.models.models import UserFilter
 import logging
@@ -61,6 +62,13 @@ def _passes_filter(job: NormalizedJob, f: UserFilter) -> bool:
         preferred = {t.lower() for t in f.tech_stack}
         job_tech = {t.lower() for t in job.tech_stack}
         if not preferred.intersection(job_tech):
+            return False
+
+    # Max age filter — skip jobs older than N hours
+    if f.max_age_hours and job.posted_at:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=f.max_age_hours)
+        posted = job.posted_at if job.posted_at.tzinfo else job.posted_at.replace(tzinfo=timezone.utc)
+        if posted < cutoff:
             return False
 
     return True

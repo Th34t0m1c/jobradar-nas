@@ -1,13 +1,12 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../context/useAuth'
 import { Spinner } from '../components/ui'
 import { Radio, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function LoginPage() {
   const { login } = useAuth()
-  const navigate = useNavigate()
   const [form, setForm] = useState({ email: '', password: '' })
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -17,7 +16,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await login(form.email, form.password)
-      navigate('/dashboard')
+      // login() triggers window.location.href = '/dashboard' internally
     } catch {
       toast.error('Invalid email or password')
     } finally {
@@ -59,7 +58,15 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="label">Password</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="label mb-0">Password</label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs text-slate-500 hover:text-signal transition-colors font-body"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
                 <input
                   className="input pr-10"

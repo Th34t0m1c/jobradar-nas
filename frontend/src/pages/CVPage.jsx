@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { cvApi } from '../api/client'
 import { SectionHeader, PageSpinner, Spinner, EmptyState } from '../components/ui'
 import { formatDateFull } from '../utils/helpers'
-import { FileText, Upload, CheckCircle, File } from 'lucide-react'
+import { FileText, Upload, CheckCircle, File, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function CVPage() {
@@ -35,6 +35,19 @@ export default function CVPage() {
       queryClient.invalidateQueries(['cv'])
     },
     onError: () => toast.error('Activation failed'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => cvApi.delete(id),
+    onSuccess: () => {
+      toast.success('CV version deleted')
+      queryClient.invalidateQueries(['cv'])
+    },
+    onError: (err) => {
+      const detail = err.response?.data?.detail
+      const status = err.response?.status
+      toast.error(detail || (status ? `Delete failed (${status})` : err.message || 'Delete failed'))
+    },
   })
 
   function handleFile(file) {
@@ -147,13 +160,23 @@ export default function CVPage() {
                       <CheckCircle className="w-3.5 h-3.5" /> Active
                     </span>
                   ) : (
-                    <button
-                      className="btn-ghost text-xs px-3 py-1.5"
-                      onClick={() => activateMutation.mutate(v.id)}
-                      disabled={activateMutation.isPending}
-                    >
-                      Activate
-                    </button>
+                    <>
+                      <button
+                        className="btn-ghost text-xs px-3 py-1.5"
+                        onClick={() => activateMutation.mutate(v.id)}
+                        disabled={activateMutation.isPending || deleteMutation.isPending}
+                      >
+                        Activate
+                      </button>
+                      <button
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                        onClick={() => deleteMutation.mutate(v.id)}
+                        disabled={deleteMutation.isPending}
+                        title="Delete this version"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>

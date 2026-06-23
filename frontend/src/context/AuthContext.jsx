@@ -1,23 +1,43 @@
-import { createContext, useContext, useState, useCallback } from 'react'
-import { authApi } from '../api/client'
+import { useState, useCallback } from 'react'
+import { AuthContext } from './authContext.js'
+import { authApi, TOKEN_KEY } from '../api/client'
 
-const AuthContext = createContext(null)
+function isTokenValid(token) {
+  if (!token) return false
+  try {
+    // JWT uses base64url (- and _ instead of + and /). atob() needs standard base64.
+    const base64url = token.split('.')[1]
+    const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=')
+    const payload = JSON.parse(atob(padded))
+    return typeof payload.exp === 'number' && payload.exp * 1000 > Date.now()
+  } catch {
+    return false
+  }
+}
 
 export function AuthProvider({ children }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () => localStorage.getItem('auth') === 'true'
-  )
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (!isTokenValid(token)) {
+      if (token) localStorage.removeItem(TOKEN_KEY)
+      return false
+    }
+    return true
+  })
 
   const login = useCallback(async (email, password) => {
-    await authApi.login(email, password)
-    setIsAuthenticated(true)
-    localStorage.setItem('auth', 'true')
+    const res = await authApi.login(email, password)
+    const token = res.data?.access_token
+    if (!token) throw new Error('No token received from server')
+    localStorage.setItem(TOKEN_KEY, token)
+    // Full page reload guarantees token is in localStorage before any query fires
+    window.location.href = '/dashboard'
   }, [])
 
-  const logout = useCallback(async () => {
-    await authApi.logout()
+  const logout = useCallback(() => {
+    localStorage.removeItem(TOKEN_KEY)
     setIsAuthenticated(false)
-    localStorage.removeItem('auth')
     window.location.href = '/login'
   }, [])
 
@@ -27,5 +47,3 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   )
 }
-
-export const useAuth = () => useContext(AuthContext)

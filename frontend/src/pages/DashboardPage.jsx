@@ -9,7 +9,7 @@ import {
 import { formatDate } from '../utils/helpers'
 import {
   BriefcaseBusiness, Play, Trash2, Eye,
-  ChevronLeft, ChevronRight, ArrowUpDown, Filter, X
+  ChevronLeft, ChevronRight, ArrowUpDown, Filter, X, Eraser
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -33,6 +33,7 @@ export default function DashboardPage() {
     platform: '', status: '', score_min: '', score_max: '', title: '',
   })
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [showDeleteAll, setShowDeleteAll] = useState(false)
   const [taskId, setTaskId] = useState(null)
 
   function setParam(key, value) {
@@ -48,6 +49,7 @@ export default function DashboardPage() {
     queryKey: ['jobs', queryParams],
     queryFn: () => jobsApi.list(queryParams).then(r => r.data),
     keepPreviousData: true,
+    staleTime: 60_000,
   })
 
   const deleteMutation = useMutation({
@@ -56,6 +58,16 @@ export default function DashboardPage() {
       toast.success('Job deleted')
       queryClient.invalidateQueries(['jobs'])
       setDeleteTarget(null)
+    },
+    onError: () => toast.error('Delete failed'),
+  })
+
+  const deleteAllMutation = useMutation({
+    mutationFn: () => jobsApi.deleteAll(),
+    onSuccess: () => {
+      toast.success('All jobs deleted')
+      queryClient.invalidateQueries(['jobs'])
+      setShowDeleteAll(false)
     },
     onError: () => toast.error('Delete failed'),
   })
@@ -85,7 +97,17 @@ export default function DashboardPage() {
         title="Job Board"
         subtitle={total > 0 ? `${total} jobs matched your profile` : 'Run the pipeline to fetch jobs'}
         action={
-          <button
+          <div className="flex items-center gap-2">
+            <button
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-body font-medium transition-all duration-200 bg-red-500/15 border border-red-500/25 text-red-400 hover:bg-red-500/25 disabled:opacity-50"
+              onClick={() => setShowDeleteAll(true)}
+              disabled={total === 0}
+              title="Delete all jobs"
+            >
+              <Eraser className="w-3.5 h-3.5" />
+              Delete All
+            </button>
+            <button
               className="btn-primary flex items-center gap-1.5 text-xs"
               onClick={() => triggerMutation.mutate()}
               disabled={triggerMutation.isPending}
@@ -93,6 +115,7 @@ export default function DashboardPage() {
               {triggerMutation.isPending ? <Spinner size="sm" /> : <Play className="w-3.5 h-3.5" />}
               Run Pipeline
             </button>
+          </div>
         }
       />
 
@@ -319,7 +342,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Delete confirm */}
+      {/* Delete single job confirm */}
       <ConfirmDialog
         open={!!deleteTarget}
         title="Delete this job?"
@@ -327,6 +350,16 @@ export default function DashboardPage() {
         danger
         onConfirm={() => deleteMutation.mutate(deleteTarget.id)}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      {/* Delete all jobs confirm */}
+      <ConfirmDialog
+        open={showDeleteAll}
+        title="Delete all jobs?"
+        description={`All ${total} jobs will be permanently removed. User data, CV, and filters are not affected.`}
+        danger
+        onConfirm={() => deleteAllMutation.mutate()}
+        onCancel={() => setShowDeleteAll(false)}
       />
     </div>
   )

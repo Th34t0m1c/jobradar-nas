@@ -1,5 +1,5 @@
 from app.db.database import engine, Base
-from app.models.models import User, Job, CVVersion, UserFilter, Platform
+from app.models.models import User, Job, CVVersion, UserFilter, Platform, PasswordResetToken
 from sqlalchemy.orm import Session
 import logging
 
@@ -20,7 +20,7 @@ def init_db():
 
 def _seed_platforms(db: Session):
     """Insert default active platforms if they don't exist."""
-    platforms = ["weworkremotely", "himalayas", "arcdev", "remoteok", "workingnomads", "empllo", "remotive", "arbeitnow"]
+    platforms = ["weworkremotely", "himalayas", "arcdev", "remoteok", "workingnomads", "empllo", "remotive", "arbeitnow", "jobicy", "remoteco"]
     for name in platforms:
         exists = db.query(Platform).filter(Platform.name == name).first()
         if not exists:

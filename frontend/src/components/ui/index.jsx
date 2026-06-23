@@ -1,4 +1,4 @@
-import { Loader2, AlertTriangle } from 'lucide-react'
+import { Loader2, AlertTriangle, Check, X } from 'lucide-react'
 import { STATUS_CONFIG, PLATFORM_CONFIG } from '../../utils/helpers'
 
 export function StatusBadge({ status }) {
@@ -126,4 +126,35 @@ export function Tag({ children, className = '' }) {
       {children}
     </span>
   )
+}
+
+const PASSWORD_RULES = [
+  { id: 'length',    label: 'At least 8 characters',          test: (v) => v.length >= 8 },
+  { id: 'upper',     label: 'One uppercase letter (A-Z)',      test: (v) => /[A-Z]/.test(v) },
+  { id: 'lower',     label: 'One lowercase letter (a-z)',      test: (v) => /[a-z]/.test(v) },
+  { id: 'number',    label: 'One number (0-9)',                test: (v) => /\d/.test(v) },
+  { id: 'special',   label: 'One special character (!@#$…)',   test: (v) => /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(v) },
+]
+
+export function PasswordRules({ password }) {
+  if (!password) return null
+  return (
+    <ul className="mt-2 space-y-1">
+      {PASSWORD_RULES.map(({ id, label, test }) => {
+        const met = test(password)
+        return (
+          <li key={id} className={`flex items-center gap-1.5 text-xs font-body transition-colors ${met ? 'text-signal' : 'text-slate-500'}`}>
+            {met
+              ? <Check className="w-3 h-3 flex-shrink-0" />
+              : <X className="w-3 h-3 flex-shrink-0" />}
+            {label}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+export function isPasswordStrong(password) {
+  return PASSWORD_RULES.every(({ test }) => test(password))
 }

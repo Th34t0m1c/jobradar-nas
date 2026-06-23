@@ -42,12 +42,14 @@ def save_cv_version(
     filename: str,
     file_path: str,
     summary: str,
+    user_id: int,
 ) -> CVVersion:
-    """Deactivate all existing CVs, then save the new one as active."""
-    db.query(CVVersion).update({"is_active": False})
+    """Deactivate all existing CVs for this user, then save the new one as active."""
+    db.query(CVVersion).filter(CVVersion.user_id == user_id).update({"is_active": False})
     db.commit()
 
     cv = CVVersion(
+        user_id=user_id,
         filename=filename,
         file_path=file_path,
         summary=summary,
@@ -56,17 +58,17 @@ def save_cv_version(
     db.add(cv)
     db.commit()
     db.refresh(cv)
-    logger.info(f"CV: Saved new version '{filename}' as active (id={cv.id})")
+    logger.info(f"CV: Saved new version '{filename}' as active for user {user_id} (id={cv.id})")
     return cv
 
 
-def get_active_cv_summary(db: Session) -> str:
-    """Return the summary of the currently active CV version."""
-    cv = db.query(CVVersion).filter(CVVersion.is_active == True).first()
+def get_active_cv_summary(db: Session, user_id: int) -> str:
+    """Return the summary of the currently active CV version for this user."""
+    cv = db.query(CVVersion).filter(CVVersion.is_active == True, CVVersion.user_id == user_id).first()
     if not cv:
         raise ValueError("No active CV found. Please upload your CV first.")
     return cv.summary
 
 
-def get_all_cv_versions(db: Session):
-    return db.query(CVVersion).order_by(CVVersion.uploaded_at.desc()).all()
+def get_all_cv_versions(db: Session, user_id: int):
+    return db.query(CVVersion).filter(CVVersion.user_id == user_id).order_by(CVVersion.uploaded_at.desc()).all()
