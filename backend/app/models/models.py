@@ -53,7 +53,6 @@ class Job(Base):
     status = Column(String(20), default="new", nullable=False)  # new/interested/applied/skipped
     posted_at = Column(DateTime, nullable=True)
     fetched_at = Column(DateTime, server_default=func.now(), nullable=False)
-    is_deleted = Column(Boolean, default=False, nullable=False)
     cv_version_id = Column(Integer, ForeignKey("cv_versions.id"), nullable=True)
 
 
@@ -64,6 +63,7 @@ class CVVersion(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     filename = Column(String(255), nullable=False)
     file_path = Column(String(500), nullable=False)
+    extracted_text = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
     uploaded_at = Column(DateTime, server_default=func.now(), nullable=False)
     is_active = Column(Boolean, default=False, nullable=False)
@@ -80,7 +80,8 @@ class UserFilter(Base):
     location_region = Column(JSON, nullable=True)     # ["Asia", "Anywhere"]
     tech_stack = Column(JSON, nullable=True)          # ["Python", "FastAPI", "Docker"]
     min_score_threshold = Column(Float, default=0.0)
-    max_age_hours = Column(Integer, nullable=True)   # only save/show jobs posted within this many hours
+    max_age_hours = Column(Integer, nullable=True)
+    enabled_platforms = Column(JSON, nullable=True)  # null/[] = all enabled; list = only these platforms
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

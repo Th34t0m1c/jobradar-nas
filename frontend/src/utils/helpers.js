@@ -1,17 +1,33 @@
 import { formatDistanceToNow, format } from 'date-fns'
 
-export function scoreColor(score) {
-  if (score === null || score === undefined) return 'text-slate-500'
-  if (score >= 80) return 'text-signal'
-  if (score >= 60) return 'text-amber-400'
-  return 'text-red-400'
+// ── Avatar ─────────────────────────────────────────────────────────────────────
+const AVATAR_COLORS = ['#7C3AED', '#2563EB', '#059669', '#D97706', '#DC2626', '#DB2777', '#0891B2']
+export function getAvatarBg(name) {
+  if (!name) return AVATAR_COLORS[0]
+  let h = 0
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) & 0xffff
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
 }
 
-export function scoreBarColor(score) {
-  if (score === null || score === undefined) return 'bg-slate-600'
-  if (score >= 80) return 'bg-signal'
-  if (score >= 60) return 'bg-amber-400'
-  return 'bg-red-400'
+// ── Score color (hex, for inline styles) ──────────────────────────────────────
+export function scoreHexColor(score) {
+  if (score == null) return '#A1A1AA'
+  if (score >= 80) return '#059669'
+  if (score >= 60) return '#D97706'
+  return '#DC2626'
+}
+
+// ── Platform dot colors ────────────────────────────────────────────────────────
+export const PLATFORM_DOT_COLORS = {
+  weworkremotely: '#F97316',
+  himalayas:      '#38BDF8',
+  arcdev:         '#A855F7',
+  remoteok:       '#4ADE80',
+  workingnomads:  '#2DD4BF',
+  empllo:         '#EC4899',
+  remotive:       '#818CF8',
+  arbeitnow:      '#FACC15',
+  jobicy:         '#FB7185',
 }
 
 export const STATUS_CONFIG = {
@@ -31,7 +47,6 @@ export const PLATFORM_CONFIG = {
   remotive:       { label: 'Remotive',           short: 'RMT', color: 'text-indigo-400' },
   arbeitnow:      { label: 'Arbeitnow',          short: 'ABN', color: 'text-yellow-400' },
   jobicy:         { label: 'Jobicy',             short: 'JBC', color: 'text-rose-400' },
-  remoteco:       { label: 'Remote.co',          short: 'RCO', color: 'text-cyan-400' },
 }
 
 export function formatDate(dateStr) {

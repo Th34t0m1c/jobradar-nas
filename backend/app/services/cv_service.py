@@ -2,15 +2,12 @@ import os
 import pdfplumber
 from sqlalchemy.orm import Session
 from app.models.models import CVVersion
-from app.core.config import get_settings
 import logging
 
-settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
 def extract_text_from_pdf(file_path: str) -> str:
-    """Extract raw text from a PDF file using pdfplumber."""
     text = ""
     try:
         with pdfplumber.open(file_path) as pdf:
@@ -24,27 +21,13 @@ def extract_text_from_pdf(file_path: str) -> str:
     return text.strip()
 
 
-def generate_cv_summary(full_text: str) -> str:
-    """
-    Produce a clean, concise CV summary (~300 words) from extracted text.
-    This summary is what gets sent to Claude with every job match request.
-    We trim whitespace and limit to the most relevant sections.
-    """
-    lines = [line.strip() for line in full_text.splitlines() if line.strip()]
-    # Keep first 400 lines max to avoid bloating the prompt
-    trimmed = "\n".join(lines[:400])
-    # Hard cap at 3000 characters for token efficiency
-    return trimmed[:3000]
-
-
 def save_cv_version(
     db: Session,
     filename: str,
     file_path: str,
-    summary: str,
+    extracted_text: str,
     user_id: int,
 ) -> CVVersion:
-    """Deactivate all existing CVs for this user, then save the new one as active."""
     db.query(CVVersion).filter(CVVersion.user_id == user_id).update({"is_active": False})
     db.commit()
 
@@ -52,7 +35,8 @@ def save_cv_version(
         user_id=user_id,
         filename=filename,
         file_path=file_path,
-        summary=summary,
+        extracted_text=extracted_text,
+        summary=None,
         is_active=True,
     )
     db.add(cv)
@@ -60,14 +44,6 @@ def save_cv_version(
     db.refresh(cv)
     logger.info(f"CV: Saved new version '{filename}' as active for user {user_id} (id={cv.id})")
     return cv
-
-
-def get_active_cv_summary(db: Session, user_id: int) -> str:
-    """Return the summary of the currently active CV version for this user."""
-    cv = db.query(CVVersion).filter(CVVersion.is_active == True, CVVersion.user_id == user_id).first()
-    if not cv:
-        raise ValueError("No active CV found. Please upload your CV first.")
-    return cv.summary
 
 
 def get_all_cv_versions(db: Session, user_id: int):

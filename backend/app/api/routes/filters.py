@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -21,7 +21,10 @@ def get_filters(
 ):
     f = db.query(UserFilter).filter(UserFilter.user_id == current_user.id).first()
     if not f:
-        raise HTTPException(status_code=404, detail="No filters configured yet")
+        f = UserFilter(user_id=current_user.id)
+        db.add(f)
+        db.commit()
+        db.refresh(f)
     return f
 
 
@@ -50,6 +53,7 @@ def save_filters(
         f.tech_stack = body.tech_stack
         f.min_score_threshold = body.min_score_threshold or 0.0
         f.max_age_hours = body.max_age_hours
+        f.enabled_platforms = body.enabled_platforms or None
     else:
         f = UserFilter(
             user_id=current_user.id,
@@ -60,6 +64,7 @@ def save_filters(
             tech_stack=body.tech_stack,
             min_score_threshold=body.min_score_threshold or 0.0,
             max_age_hours=body.max_age_hours,
+            enabled_platforms=body.enabled_platforms or None,
         )
         db.add(f)
 

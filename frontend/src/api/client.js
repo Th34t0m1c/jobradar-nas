@@ -82,13 +82,20 @@ export const cvApi = {
     })
   },
   activate: (id) => api.post(`/cv/${id}/activate`),
+  setSummary: (id, summary) => api.patch(`/cv/${id}/summary`, { summary }),
   delete: (id) => api.delete(`/cv/${id}`),
+  getSuggestions: () => api.get('/cv/suggestions'),
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
 export const filtersApi = {
   get: () => api.get('/filters'),
   save: (data) => api.put('/filters', data),
+}
+
+// ── Platforms ─────────────────────────────────────────────────────────────────
+export const platformsApi = {
+  list: () => api.get('/platforms'),
 }
 
 export default api

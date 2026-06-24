@@ -91,46 +91,74 @@
   }
 }
 
-/* Job description HTML renderer */
+/* Job description HTML renderer — light card background */
 .job-description {
-  color: #94a3b8;
-  font-size: 0.875rem;
-  line-height: 1.75;
+  color: #374151;
+  font-size: 0.9rem;
+  line-height: 1.8;
+  font-family: 'Inter', system-ui, sans-serif;
 }
 .job-description p {
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.9rem;
 }
 .job-description h1, .job-description h2, .job-description h3, .job-description h4 {
-  color: #e2e8f0;
-  font-weight: 600;
-  margin-top: 1.5rem;
+  color: #111827;
+  font-weight: 700;
+  margin-top: 1.6rem;
   margin-bottom: 0.5rem;
-  font-size: 0.9375rem;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
 }
-.job-description h2 { font-size: 1rem; }
+.job-description h1 { font-size: 1.1rem; }
+.job-description h2 { font-size: 1.05rem; }
+.job-description h3 { font-size: 1rem; }
+.job-description h4 { font-size: 0.9375rem; }
 .job-description ul, .job-description ol {
-  padding-left: 1.4rem;
-  margin-bottom: 0.85rem;
+  padding-left: 1.5rem;
+  margin-bottom: 0.9rem;
 }
 .job-description li {
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.35rem;
+  color: #374151;
 }
 .job-description strong, .job-description b {
-  color: #cbd5e1;
+  color: #111827;
   font-weight: 600;
 }
+.job-description em, .job-description i {
+  color: #4B5563;
+}
 .job-description a {
-  color: #7dd3fc;
-  text-decoration: none;
+  color: #7C3AED;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .job-description a:hover {
-  text-decoration: underline;
+  color: #6D28D9;
 }
 .job-description img {
   display: none;
 }
 .job-description br + br {
   display: none;
+}
+.job-description hr {
+  border: none;
+  border-top: 1px solid #E4E2DC;
+  margin: 1.25rem 0;
+}
+.job-description blockquote {
+  border-left: 3px solid #E4E2DC;
+  padding-left: 1rem;
+  color: #6B7280;
+  margin: 1rem 0;
+}
+.job-description pre, .job-description code {
+  background: #F3F4F6;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.8125rem;
+  color: #1F2937;
+  padding: 0.15em 0.4em;
 }
 
 /* Grain overlay on background */

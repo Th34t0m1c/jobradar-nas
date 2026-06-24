@@ -32,13 +32,13 @@ export function AuthProvider({ children }) {
     if (!token) throw new Error('No token received from server')
     localStorage.setItem(TOKEN_KEY, token)
     // Full page reload guarantees token is in localStorage before any query fires
-    window.location.href = '/dashboard'
+    window.location.replace('/dashboard')
   }, [])
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY)
     setIsAuthenticated(false)
-    window.location.href = '/login'
+    window.location.replace('/login')
   }, [])
 
   return (

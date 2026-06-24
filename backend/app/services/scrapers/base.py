@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Optional
 from datetime import datetime
+import re
 
 
 @dataclass
@@ -20,6 +21,58 @@ class NormalizedJob:
     salary: Optional[str] = None
     posted_at: Optional[datetime] = None
     raw: Optional[dict] = field(default_factory=dict)
+
+
+# Canonical tech list with regex patterns compiled once.
+# Terms with only word chars use \b...\b; special-char terms use lookarounds.
+_TECH_TERMS = [
+    # Languages
+    "Python", "JavaScript", "TypeScript", "Go", "Rust", "Java", "Kotlin",
+    "Ruby", "PHP", "Swift", "Scala", "Elixir", "Haskell", "Clojure",
+    "Perl", "Lua", "Dart", "Groovy", "Bash",
+    # Special-char languages — handled separately below
+    "C#", "C++", "F#",
+    # Frontend
+    "React", "Vue", "Angular", "Svelte", "Next.js", "Nuxt.js", "Remix",
+    "Tailwind", "Bootstrap", "jQuery", "WebAssembly",
+    # Backend
+    "Node.js", "FastAPI", "Django", "Flask", "Rails", "Laravel", "Spring",
+    "Express", "NestJS", "Gin", "Echo", "Fiber",
+    ".NET", "ASP.NET",
+    # Mobile
+    "iOS", "Android", "Flutter", "React Native",
+    # Data / ML
+    "TensorFlow", "PyTorch", "scikit-learn", "Pandas", "NumPy", "Spark",
+    "Kafka", "Airflow", "dbt", "Snowflake", "Databricks",
+    # Infra / DevOps
+    "Docker", "Kubernetes", "Terraform", "Ansible", "Helm",
+    "AWS", "Azure", "GCP", "Heroku", "Vercel",
+    "CI/CD", "Jenkins", "GitHub Actions", "GitLab CI",
+    "Linux", "Nginx", "Caddy",
+    # Databases
+    "PostgreSQL", "MySQL", "SQLite", "MongoDB", "Redis",
+    "Elasticsearch", "Cassandra", "DynamoDB", "CockroachDB",
+    "Supabase", "Firebase", "PlanetScale",
+    # APIs / protocols
+    "GraphQL", "REST", "gRPC", "WebSocket",
+    # Tools
+    "Git", "Jira", "Figma", "Sentry",
+]
+
+# Build pattern → canonical name map once at import time
+_TECH_PATTERNS: List[tuple] = []
+
+def _build_patterns():
+    for term in _TECH_TERMS:
+        escaped = re.escape(term)
+        # Terms with only word chars can use \b; others need lookarounds
+        if re.fullmatch(r'\w+', term):
+            pattern = re.compile(r'\b' + escaped + r'\b', re.IGNORECASE)
+        else:
+            pattern = re.compile(r'(?<!\w)' + escaped + r'(?!\w)', re.IGNORECASE)
+        _TECH_PATTERNS.append((pattern, term))
+
+_build_patterns()
 
 
 class BaseScraper(ABC):
@@ -44,6 +97,17 @@ class BaseScraper(ABC):
         if any(k in raw for k in ["mid", "intermediate", "associate"]):
             return "mid"
         return None
+
+    def extract_tech_stack(self, *texts: str, max_results: int = 10) -> List[str]:
+        """Word-boundary tech extraction shared across all scrapers."""
+        combined = " ".join(t for t in texts if t)
+        seen: List[str] = []
+        for pattern, canonical in _TECH_PATTERNS:
+            if len(seen) >= max_results:
+                break
+            if pattern.search(combined):
+                seen.append(canonical)
+        return seen
 
     def normalize_job_type(self, raw: str) -> Optional[str]:
         raw = raw.lower()

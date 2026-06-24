@@ -310,6 +310,7 @@ class CVVersionResponse(BaseModel):
     id: int
     filename: str
     summary: Optional[str] = None
+    extracted_text: Optional[str] = None
     uploaded_at: datetime
     is_active: bool
 
@@ -319,12 +320,25 @@ class CVVersionResponse(BaseModel):
             "example": {
                 "id": 3,
                 "filename": "jane_smith_cv.pdf",
-                "summary": "Senior Software Engineer with 7 years of experience in Python, FastAPI, PostgreSQL…",
+                "summary": "Senior Software Engineer with 7 years…",
+                "extracted_text": "John Doe\nSenior Software Engineer\n…",
                 "uploaded_at": "2025-06-20T09:30:00Z",
                 "is_active": True,
             }
         },
     }
+
+
+class CVSummaryUpdate(BaseModel):
+    summary: str
+
+    @field_validator("summary")
+    @classmethod
+    def not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Summary cannot be empty")
+        return v
 
 
 # ── Filters ───────────────────────────────────────────────────────────────────
@@ -337,6 +351,7 @@ class UserFilterRequest(BaseModel):
     tech_stack: Optional[List[str]] = None
     min_score_threshold: Optional[float] = 0.0
     max_age_hours: Optional[int] = None
+    enabled_platforms: Optional[List[str]] = None
 
     model_config = {
         "json_schema_extra": {
@@ -348,6 +363,7 @@ class UserFilterRequest(BaseModel):
                 "tech_stack": ["Python", "FastAPI", "Docker", "PostgreSQL"],
                 "min_score_threshold": 50.0,
                 "max_age_hours": 72,
+                "enabled_platforms": ["weworkremotely", "himalayas", "remoteok"],
             }
         }
     }
@@ -368,10 +384,16 @@ class UserFilterResponse(UserFilterRequest):
                 "location_region": ["Anywhere"],
                 "tech_stack": ["Python", "FastAPI", "Docker"],
                 "min_score_threshold": 50.0,
+                "enabled_platforms": ["weworkremotely", "himalayas"],
                 "updated_at": "2025-06-22T10:00:00Z",
             }
         },
     }
+
+
+class CVSuggestionsResponse(BaseModel):
+    role_titles: List[str]
+    tech_stack: List[str]
 
 
 # ── Task ──────────────────────────────────────────────────────────────────────
@@ -380,13 +402,14 @@ class TaskStatusResponse(BaseModel):
     task_id: str
     status: str
     message: Optional[str] = None
+    result: Optional[dict] = None
 
     model_config = {
         "json_schema_extra": {
             "example": {
                 "task_id": "b3d2a1c4-1234-5678-abcd-ef0123456789",
                 "status": "SUCCESS",
-                "message": "{'status': 'success', 'fetched': 312, 'saved': 47, 'users': 2}",
+                "result": {"status": "success", "fetched": 312, "saved": 47, "scoring_task_id": "c4e3f2d1-5678"},
             }
         }
     }

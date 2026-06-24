@@ -5,7 +5,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from contextlib import asynccontextmanager
 
-from app.api.routes import auth, jobs, cv, filters
+from app.api.routes import auth, jobs, cv, filters, platforms
 from app.db.init_db import init_db
 from app.core.config import get_settings
 
@@ -138,6 +138,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(cv.router, prefix="/api")
 app.include_router(filters.router, prefix="/api")
+app.include_router(platforms.router, prefix="/api")
 
 
 @app.get("/api/health", tags=["health"], summary="Health check")

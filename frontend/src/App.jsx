@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/layout/ProtectedRoute'
+import PublicRoute from './components/layout/PublicRoute'
 import AppLayout from './components/layout/AppLayout'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
@@ -17,10 +18,10 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+          <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+          <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordPage /></PublicRoute>} />
+          <Route path="/reset-password" element={<PublicRoute><ResetPasswordPage /></PublicRoute>} />
           <Route
             path="/"
             element={

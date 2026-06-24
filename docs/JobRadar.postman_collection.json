@@ -19,7 +19,7 @@
 
     {
       "name": "Auth",
-      "description": "Register, log in, and log out. Login auto-saves the token.",
+      "description": "Register, log in, log out, and manage your account.",
       "item": [
 
         {
@@ -31,9 +31,10 @@
             "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api","auth","register"] },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"full_name\": \"Jane Smith\",\n  \"email\": \"jane@example.com\",\n  \"password\": \"securepass123\",\n  \"confirm_password\": \"securepass123\"\n}"
+              "raw": "{\n  \"full_name\": \"Jane Smith\",\n  \"email\": \"jane@example.com\",\n  \"password\": \"securepass123\",\n  \"confirm_password\": \"securepass123\"\n}",
+              "options": { "raw": { "language": "json" } }
             },
-            "description": "Create a new user account. Returns the created user. Email must be unique."
+            "description": "Create a new user account. Email must be unique. Password must be at least 8 characters. Rate-limited to 10 requests per minute per IP."
           },
           "response": []
         },
@@ -62,9 +63,10 @@
             "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api","auth","login"] },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"jane@example.com\",\n  \"password\": \"securepass123\"\n}"
+              "raw": "{\n  \"email\": \"jane@example.com\",\n  \"password\": \"securepass123\"\n}",
+              "options": { "raw": { "language": "json" } }
             },
-            "description": "Authenticate and receive a Bearer JWT. The token is automatically saved to `{{token}}` via the Tests script."
+            "description": "Authenticate and receive a Bearer JWT valid for 30 minutes. The token is automatically saved to `{{token}}` via the Tests script. Rate-limited to 5 requests per minute per IP."
           },
           "response": []
         },
@@ -84,7 +86,84 @@
             "method": "POST",
             "header": [],
             "url": { "raw": "{{base_url}}/api/auth/logout", "host": ["{{base_url}}"], "path": ["api","auth","logout"] },
-            "description": "Token-based logout — clears `{{token}}` in Postman. No server-side action is required."
+            "description": "Token-based logout — clears `{{token}}` in Postman. No server-side action is required; discard the token on the client."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/auth/me", "host": ["{{base_url}}"], "path": ["api","auth","me"] },
+            "description": "Returns the profile of the currently authenticated user (id, full_name, email, is_active, created_at)."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/auth/profile", "host": ["{{base_url}}"], "path": ["api","auth","profile"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Jane Smith\",\n  \"email\": \"jane.new@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Update the current user's full name and/or email. Both fields are optional — omit any you don't want to change. Returns 409 if the new email is already taken."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/auth/change-password", "host": ["{{base_url}}"], "path": ["api","auth","change-password"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"securepass123\",\n  \"new_password\": \"newpass456\",\n  \"confirm_password\": \"newpass456\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Change the current user's password. Requires the existing password for verification. Returns 400 if the current password is wrong or the new passwords don't match."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Forgot Password",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/auth/forgot-password", "host": ["{{base_url}}"], "path": ["api","auth","forgot-password"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jane@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Request a password reset email. Always returns 200 regardless of whether the email exists (prevents enumeration). In dev with no SMTP configured, the reset link is printed to FastAPI logs. Rate-limited to 3 requests per minute per IP."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Reset Password",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/auth/reset-password", "host": ["{{base_url}}"], "path": ["api","auth","reset-password"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"<paste token from reset link>\",\n  \"new_password\": \"newpass456\",\n  \"confirm_password\": \"newpass456\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Validate the reset token (from the link emailed to the user) and set a new password. Token is single-use and expires after 1 hour. Returns 400 for invalid, expired, or already-used tokens."
           },
           "response": []
         }
@@ -118,7 +197,7 @@
                 { "key": "title",     "value": "",           "description": "keyword search in title", "disabled": true }
               ]
             },
-            "description": "Paginated list of jobs for the authenticated user. Toggle the disabled query params to filter."
+            "description": "Paginated list of jobs for the authenticated user. Toggle the disabled query params to filter. Respects the user's `max_age_hours` filter if set."
           },
           "response": []
         },
@@ -168,7 +247,7 @@
               "host": ["{{base_url}}"],
               "path": ["api","jobs","{{job_id}}","match"]
             },
-            "description": "Score a job against the user's active CV using keyword + tech-stack matching. Returns score (0–100), summary, strengths, gaps, and suggestions."
+            "description": "Score a job against the user's active CV using keyword + tech-stack matching. Returns score (0–100), summary, strengths, gaps, and suggestions. Requires an active CV to be uploaded first."
           },
           "response": []
         },
@@ -218,7 +297,7 @@
               "host": ["{{base_url}}"],
               "path": ["api","jobs","trigger"]
             },
-            "description": "Manually trigger the daily job pipeline for the current user. Task ID is saved to `{{task_id}}` automatically."
+            "description": "Manually trigger the daily job pipeline for the current user only. Task ID is saved to `{{task_id}}` automatically. Rate-limited to 5 requests per hour per IP."
           },
           "response": []
         },
@@ -233,7 +312,7 @@
               "host": ["{{base_url}}"],
               "path": ["api","jobs","task","{{task_id}}"]
             },
-            "description": "Poll a Celery task (pipeline or match-all). Status: PENDING | STARTED | PROGRESS | SUCCESS | FAILURE."
+            "description": "Poll a Celery task (pipeline or match). Status values: PENDING | STARTED | PROGRESS | SUCCESS | FAILURE. Task ownership is verified — users can only check their own tasks."
           },
           "response": []
         },
@@ -248,7 +327,7 @@
               "host": ["{{base_url}}"],
               "path": ["api","jobs","{{job_id}}"]
             },
-            "description": "Permanently delete a single job by ID."
+            "description": "Permanently delete a single job by ID. Scoped to the authenticated user."
           },
           "response": []
         },
@@ -312,7 +391,7 @@
                 }
               ]
             },
-            "description": "Upload a PDF CV. Magic-bytes validated. Extracted text is summarised and stored. CV is set as active immediately. CV ID is saved to `{{cv_id}}`."
+            "description": "Upload a PDF CV. Magic-bytes validated (must start with `%PDF`). Filename sanitised against path traversal. Text is extracted with pdfplumber and a ~3000-character summary is generated. CV is set as active immediately. CV ID is saved to `{{cv_id}}`."
           },
           "response": []
         },
@@ -342,7 +421,7 @@
               "host": ["{{base_url}}"],
               "path": ["api","cv","active"]
             },
-            "description": "Return the currently active CV version."
+            "description": "Return the currently active CV version. Returns 404 if no CV has been uploaded yet."
           },
           "response": []
         },
@@ -357,7 +436,22 @@
               "host": ["{{base_url}}"],
               "path": ["api","cv","{{cv_id}}","activate"]
             },
-            "description": "Set a specific CV version as active. All other versions for this user are deactivated."
+            "description": "Set a specific CV version as active. All other versions for this user are deactivated automatically."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Delete CV Version",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/cv/{{cv_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api","cv","{{cv_id}}"]
+            },
+            "description": "Permanently delete a CV version and its file from disk. Returns 204 No Content on success. Returns 400 if you try to delete the active CV — activate another version first. Any jobs scored with the deleted CV have their `cv_version_id` set to null."
           },
           "response": []
         }
@@ -367,7 +461,7 @@
 
     {
       "name": "Filters",
-      "description": "Configure job pre-filter preferences. Applied at pipeline time — non-matching jobs are discarded before storage.",
+      "description": "Configure job pre-filter preferences. Applied at pipeline time — non-matching jobs are discarded before storage. Empty or null fields mean no restriction for that filter.",
       "item": [
 
         {
@@ -380,7 +474,7 @@
               "host": ["{{base_url}}"],
               "path": ["api","filters"]
             },
-            "description": "Return the current job pre-filter preferences for the authenticated user."
+            "description": "Return the current job pre-filter preferences. If the user has never saved filters, a default empty record is created and returned automatically (all fields null = no restrictions, all jobs pass through)."
           },
           "response": []
         },
@@ -397,10 +491,10 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"role_titles\": [\"Backend Engineer\", \"Software Engineer\", \"Python Developer\"],\n  \"experience_level\": [\"mid\", \"senior\"],\n  \"location_type\": [\"remote\"],\n  \"location_region\": [\"Anywhere\", \"Asia\"],\n  \"tech_stack\": [\"Python\", \"FastAPI\", \"Docker\", \"PostgreSQL\"],\n  \"min_score_threshold\": 50.0\n}",
+              "raw": "{\n  \"role_titles\": [\"Backend Engineer\", \"Software Engineer\", \"Python Developer\"],\n  \"experience_level\": [\"mid\", \"senior\"],\n  \"location_type\": [\"remote\"],\n  \"location_region\": [\"Anywhere\", \"Asia\"],\n  \"tech_stack\": [\"Python\", \"FastAPI\", \"Docker\", \"PostgreSQL\"],\n  \"min_score_threshold\": 50.0,\n  \"max_age_hours\": 72,\n  \"enabled_platforms\": [\"weworkremotely\", \"himalayas\", \"arcdev\", \"remoteok\", \"workingnomads\", \"empllo\", \"remotive\", \"arbeitnow\", \"jobicy\", \"remoteco\", \"wellfound\"]\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "description": "Create or update job pre-filter preferences. All fields are optional — omit any to skip that filter."
+            "description": "Create or update job pre-filter preferences. All fields are optional — omit or set to null to disable that filter.\n\n- `role_titles`: job title must contain at least one keyword\n- `experience_level`: `junior` | `mid` | `senior`\n- `location_type`: `remote` | `hybrid` | `onsite`\n- `location_region`: e.g. `Anywhere`, `Asia`, `Europe`\n- `tech_stack`: job must mention at least one technology\n- `min_score_threshold`: hide jobs below this CV match score (0–100)\n- `max_age_hours`: only save/show jobs posted within this window\n- `enabled_platforms`: null = all platforms active; partial list = only those platforms scraped"
           },
           "response": []
         }

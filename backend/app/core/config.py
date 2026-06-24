@@ -23,11 +23,14 @@ class Settings(BaseSettings):
     SCHEDULER_TIMEZONE: str = "Asia/Dhaka"
     DAILY_JOB_HOUR: int = 10
     DAILY_JOB_MINUTE: int = 0
-    JOB_FETCH_WINDOW_HOURS: int = 25
+    JOB_FETCH_WINDOW_HOURS: int = 48
     JOB_RETENTION_DAYS: int = 4
 
     # Storage
     CV_UPLOAD_DIR: str = "/cv_data"
+
+    # Rate limits
+    TRIGGER_RATE_LIMIT: str = "5/hour"
 
     # CORS - comma-separated list of allowed frontend origins
     CORS_ORIGINS: str = "http://localhost:5173"

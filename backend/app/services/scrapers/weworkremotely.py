@@ -45,7 +45,7 @@ class WeWorkRemotelyScraper(BaseScraper):
                         location="Remote",
                         location_region="Anywhere",
                         experience_level=self.normalize_experience_level(title),
-                        tech_stack=self._extract_tech_stack(description),
+                        tech_stack=self.extract_tech_stack(description),
                         posted_at=posted_at,
                         raw=dict(entry),
                     )
@@ -78,17 +78,3 @@ class WeWorkRemotelyScraper(BaseScraper):
     def _clean_html(self, html: str) -> str:
         return BeautifulSoup(html, "lxml").get_text(separator=" ").strip()
 
-    def _extract_tech_stack(self, text: str) -> List[str]:
-        known_tech = [
-            "Python", "JavaScript", "TypeScript", "Go", "Rust", "Java", "Kotlin",
-            "Ruby", "PHP", "C++", "C#", "Swift", "React", "Vue", "Angular",
-            "Node.js", "FastAPI", "Django", "Flask", "Laravel", "Rails",
-            "Docker", "Kubernetes", "AWS", "Azure", "GCP", "PostgreSQL",
-            "MySQL", "MongoDB", "Redis", "GraphQL", "REST", "gRPC",
-        ]
-        found = []
-        text_lower = text.lower()
-        for tech in known_tech:
-            if tech.lower() in text_lower:
-                found.append(tech)
-        return found

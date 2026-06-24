@@ -35,13 +35,14 @@ class RemoteOKScraper(BaseScraper):
                     tags = [t for t in tags if isinstance(t, str)]
 
                     salary = self._extract_salary(entry)
+                    description = entry.get("description", "")
 
                     job = NormalizedJob(
                         platform=self.PLATFORM_NAME,
                         title=entry.get("position", ""),
                         company=entry.get("company", "Unknown"),
                         url=entry.get("apply_url") or entry.get("url", ""),
-                        description=entry.get("description", ""),
+                        description=description,
                         location=entry.get("location") or "Remote",
                         job_type="remote",
                         experience_level=self._map_experience(tags),
@@ -49,7 +50,7 @@ class RemoteOKScraper(BaseScraper):
                         tech_stack=tags[:10],
                         salary=salary,
                         posted_at=posted_at,
-                        raw=entry,
+                        raw={**entry, "description": description},
                     )
                     jobs.append(job)
 

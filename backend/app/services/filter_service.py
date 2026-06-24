@@ -71,4 +71,9 @@ def _passes_filter(job: NormalizedJob, f: UserFilter) -> bool:
         if posted < cutoff:
             return False
 
+    # Platform filter — only save jobs from user's enabled platforms
+    if f.enabled_platforms:
+        if job.platform not in f.enabled_platforms:
+            return False
+
     return True

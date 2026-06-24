@@ -86,9 +86,9 @@ class ArcDevScraper(BaseScraper):
             location="Remote",
             location_region="Anywhere",
             experience_level=self.normalize_experience_level(title),
-            tech_stack=self._extract_tech_stack(description),
+            tech_stack=self.extract_tech_stack(description),
             posted_at=posted_at,
-            raw={"html": str(card)[:500]},
+            raw={"description": description, "html": str(card)},
         )
 
     def _parse_relative_date(self, text: str) -> Optional[datetime]:
@@ -113,16 +113,3 @@ class ArcDevScraper(BaseScraper):
             pass
         return None
 
-    def _extract_tech_stack(self, text: str) -> List[str]:
-        known_tech = [
-            "Python", "JavaScript", "TypeScript", "Go", "Rust", "Java", "Kotlin",
-            "Ruby", "PHP", "C++", "C#", "Swift", "React", "Vue", "Angular",
-            "Node.js", "FastAPI", "Django", "Flask", "Docker", "Kubernetes",
-            "AWS", "Azure", "GCP", "PostgreSQL", "MySQL", "MongoDB", "Redis",
-        ]
-        found = []
-        text_lower = text.lower()
-        for tech in known_tech:
-            if tech.lower() in text_lower:
-                found.append(tech)
-        return found

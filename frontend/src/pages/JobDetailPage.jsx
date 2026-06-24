@@ -3,19 +3,89 @@ import DOMPurify from 'dompurify'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { jobsApi, cvApi } from '../api/client'
+import { ConfirmDialog, Spinner } from '../components/ui'
+import { formatDateFull, getPlatformLabel, getAvatarBg } from '../utils/helpers'
 import {
-  StatusBadge, PlatformBadge, ScoreDisplay, ScoreBar,
-  PageSpinner, Tag, ConfirmDialog, Spinner
-} from '../components/ui'
-import { formatDateFull, getPlatformLabel } from '../utils/helpers'
-import {
-  ArrowLeft, ExternalLink, CheckCircle, XCircle,
-  Lightbulb, Trash2, Building2, MapPin, Briefcase, Calendar, Zap, Copy, Bot
+  ArrowLeft, ExternalLink, Trash2, Zap, Copy, Bot, FileText, PenLine
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useIsMobile } from '../utils/useIsMobile'
+
+const t = {
+  violet: '#7C3AED', violetLight: '#EDE9FE',
+  bg: '#F5F4F0', surface: '#FFFFFF', border: '#E4E2DC',
+  ink: '#18181B', inkMid: '#52525B', inkLight: '#A1A1AA',
+  red: '#DC2626',
+  fontDisplay: '"Plus Jakarta Sans", system-ui, sans-serif',
+  fontBody: '"Inter", system-ui, sans-serif',
+}
 
 const STATUSES = ['new', 'interested', 'applied', 'skipped']
 const JOB_DESC_CHAR_LIMIT = 3000
+
+function buildCoverLetterPrompt(job, cvSummary) {
+  const descRaw = typeof job.description_json === 'object'
+    ? JSON.stringify(job.description_json)
+    : (job.description_json || '')
+  const jobData = {
+    title: job.title,
+    company: job.company,
+    location: job.location,
+    job_type: job.job_type,
+    tech_stack: job.tech_stack,
+    description: descRaw.slice(0, JOB_DESC_CHAR_LIMIT),
+  }
+  const cvText = cvSummary || '[No active CV — upload your CV first]'
+  return `You are an expert career coach. Write a tailored cover letter for the job below, based on the candidate's CV.
+
+## Candidate CV Summary
+${cvText}
+
+## Job
+${JSON.stringify(jobData, null, 2)}
+
+## Instructions
+- 3–4 paragraphs, 250–350 words
+- Opening: genuine interest in the specific role and company
+- Middle: connect 2–3 CV experiences directly to the job's requirements using their language
+- Closing: confident call to action with availability
+- Mirror the keywords and tone used in the job description
+- Do NOT use placeholders like [Your Name] — write it as a complete, ready-to-send letter
+
+Return ONLY the cover letter text. No explanation, no JSON, no markdown headers.`
+}
+
+function buildCvTailoringPrompt(job, cvSummary) {
+  const descRaw = typeof job.description_json === 'object'
+    ? JSON.stringify(job.description_json)
+    : (job.description_json || '')
+  const jobData = {
+    title: job.title,
+    company: job.company,
+    tech_stack: job.tech_stack,
+    description: descRaw.slice(0, JOB_DESC_CHAR_LIMIT),
+  }
+  const cvText = cvSummary || '[No active CV — upload your CV first]'
+  return `You are an expert CV coach. Suggest targeted improvements to make this candidate's CV stronger for the specific job below.
+
+## Candidate CV Summary
+${cvText}
+
+## Job
+${JSON.stringify(jobData, null, 2)}
+
+## Task
+Return ONLY a valid JSON object with exactly these fields:
+{
+  "headline": "<revised one-line professional headline tailored to this role>",
+  "summary": "<rewritten CV summary tailored to this role, 2–3 sentences>",
+  "keywords": ["<ATS keyword to add 1>", "<keyword 2>", ...up to 8],
+  "emphasize": ["<experience or project to move higher / expand on your CV>", ...up to 4],
+  "additions": ["<concrete skill, certification, or project to add if you have it>", ...up to 4]
+}
+
+Be specific — reference actual skills and requirements from the job description.`
+}
 
 function buildScoringPrompt(job, cvSummary) {
   const descRaw = typeof job.description_json === 'object'
@@ -60,15 +130,19 @@ export default function JobDetailPage() {
   const [rawJson, setRawJson] = useState('')
   const [parseError, setParseError] = useState('')
   const [parsedResult, setParsedResult] = useState(null)
+  const isMobile = useIsMobile()
 
   const { data: job, isLoading } = useQuery({
     queryKey: ['job', id],
     queryFn: () => jobsApi.get(id).then(r => r.data),
+    staleTime: 30_000,
+    retry: (count, err) => err?.response?.status !== 404 && count < 2,
   })
 
   const { data: activeCV } = useQuery({
     queryKey: ['cv', 'active'],
     queryFn: () => cvApi.getActive().then(r => r.data).catch(() => null),
+    staleTime: 60_000,
   })
 
   const statusMutation = useMutation({
@@ -120,19 +194,41 @@ export default function JobDetailPage() {
     const text = typeof raw === 'string' ? raw : (raw.description || raw.summary || null)
     if (!text) return null
     return /<[a-z][\s\S]*>/i.test(text)
-      ? DOMPurify.sanitize(text, { USE_PROFILES: { html: true } })
+      ? DOMPurify.sanitize(text, {
+          USE_PROFILES: { html: true },
+          FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button'],
+          FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onmouseout', 'onfocus', 'onblur', 'onkeydown', 'onkeyup'],
+          ALLOW_DATA_ATTR: false,
+        })
       : text
   }, [job?.description_json])
 
-  if (isLoading) return <PageSpinner />
-  if (!job) return <div className="text-slate-500 text-sm">Job not found</div>
+  if (isLoading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
+      <Spinner />
+    </div>
+  )
+  if (!job) return <div style={{ color: t.inkLight, fontSize: 14, fontFamily: t.fontBody }}>Job not found</div>
 
   const prompt = buildScoringPrompt(job, activeCV?.summary)
+  const coverLetterPrompt = buildCoverLetterPrompt(job, activeCV?.summary)
+  const cvTailoringPrompt = buildCvTailoringPrompt(job, activeCV?.summary)
 
   function copyPrompt() {
     navigator.clipboard.writeText(prompt)
     toast.success('Prompt copied — paste it into Claude.ai')
   }
+
+  function copyCoverLetterPrompt() {
+    navigator.clipboard.writeText(coverLetterPrompt)
+    toast.success('Prompt copied — paste it into Claude.ai')
+  }
+
+  function copyCvTailoringPrompt() {
+    navigator.clipboard.writeText(cvTailoringPrompt)
+    toast.success('Prompt copied — paste it into Claude.ai')
+  }
+
 
   function handleJsonChange(value) {
     setRawJson(value)
@@ -170,309 +266,551 @@ export default function JobDetailPage() {
 
   const techStack = job.tech_stack || []
 
+  const scoreColor = job.score == null ? t.inkLight
+    : job.score >= 80 ? '#059669'
+    : job.score >= 60 ? '#D97706'
+    : '#DC2626'
+
+  const scoreLabel = job.score == null ? null
+    : job.score >= 80 ? 'Strong match'
+    : job.score >= 60 ? 'Good match'
+    : 'Weak match'
+
+  const companyInitial = (job.company || '?')[0].toUpperCase()
+
   return (
-    <div className="page-enter max-w-4xl">
-      {/* Back nav */}
-      <button
-        onClick={() => navigate('/dashboard')}
-        className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-white transition-colors mb-6 group"
-      >
-        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-        Back to jobs
-      </button>
+    <div style={{ padding: '2rem 1.5rem', minHeight: '100vh', background: t.bg }}>
 
-      {/* Header */}
-      <div className="card p-6 mb-4">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              <PlatformBadge platform={job.platform} />
-              <span className="text-xs text-slate-600">·</span>
-              <span className="text-xs text-slate-500 font-body">{getPlatformLabel(job.platform)}</span>
-            </div>
-            <h1 className="font-display font-bold text-xl text-white leading-tight mb-1">
-              {job.title}
-            </h1>
-
-            <div className="flex items-center flex-wrap gap-3 mt-3 text-sm text-slate-400">
-              <span className="flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5" /> {job.company}
-              </span>
-              {job.location && (
-                <span className="flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5" /> {job.location}
-                </span>
-              )}
-              {job.job_type && (
-                <span className="flex items-center gap-1.5">
-                  <Briefcase className="w-3.5 h-3.5" /> {job.job_type}
-                </span>
-              )}
-              {job.posted_at && (
-                <span className="flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5" /> {formatDateFull(job.posted_at)}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Score */}
-          <div className="text-right flex-shrink-0">
-            <ScoreDisplay score={job.score} className="text-3xl" />
-            <p className="text-xs text-slate-600 mt-0.5 font-body">match score</p>
-            <div className="w-24 mt-2">
-              <ScoreBar score={job.score} />
-            </div>
-          </div>
-        </div>
-
-        {/* Tech stack */}
-        {techStack.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-4 pt-4 border-t border-white/5">
-            {techStack.map(t => <Tag key={t}>{t}</Tag>)}
-          </div>
-        )}
+      {/* Breadcrumb */}
+      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontFamily: t.fontBody }}>
+        <button
+          onClick={() => navigate('/dashboard')}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer', color: t.violet,
+            fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4,
+            padding: 0, fontFamily: t.fontBody, fontSize: 13,
+          }}
+        >
+          <ArrowLeft style={{ width: 14, height: 14 }} />
+          Dashboard
+        </button>
+        <span style={{ color: t.inkLight }}>/</span>
+        <span style={{ color: t.inkMid }}>{job.company} — {job.title}</span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-        {/* Status control */}
-        <div className="card p-5">
-          <p className="label mb-3">Application Status</p>
-          <div className="space-y-1.5">
-            {STATUSES.map(s => (
-              <button
-                key={s}
-                onClick={() => statusMutation.mutate(s)}
-                disabled={statusMutation.isPending}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-150 font-body
-                  ${job.status === s
-                    ? 'bg-signal-muted border border-signal/30 text-signal'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-white border border-transparent'
-                  }`}
-              >
-                <span className="capitalize">{s}</span>
-                {job.status === s && <span className="float-right text-signal">✓</span>}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* Two-column grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 300px', gap: 20, alignItems: 'start' }}>
 
-        {/* Quick actions */}
-        <div className="card p-5 lg:col-span-2">
-          <p className="label mb-3">Actions</p>
-          <div className="flex flex-col gap-2">
-            <a
-              href={job.url}
-              target="_blank"
-              rel="noreferrer"
-              className="btn-primary flex items-center justify-center gap-2 text-sm"
-            >
-              <ExternalLink className="w-4 h-4" />
-              View Original Posting
-            </a>
-            <button
-              className="btn-danger flex items-center justify-center gap-2 text-sm"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete Job
-            </button>
-          </div>
-
-        </div>
-      </div>
-
-      {/* CV Matching */}
-      <div className="card p-6 mb-4">
-        <h2 className="font-display font-semibold text-white mb-4">Get a Match Score</h2>
-
-        {!activeCV && (
-          <div className="mb-4 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400 font-body">
-            No active CV found — go to the CV page and upload your PDF first.
-          </div>
-        )}
-
-        {/* Option A — local instant match */}
-        <div className="mb-5">
-          <p className="text-xs font-display font-semibold text-slate-400 uppercase tracking-wider mb-1">
-            Option A — Instant (keyword matching)
-          </p>
-          <p className="text-xs text-slate-500 font-body mb-3">
-            Scores your CV against the job's tech stack and keywords locally. Fast but basic — no AI understanding.
-          </p>
-          <button
-            onClick={() => matchMutation.mutate()}
-            disabled={matchMutation.isPending || !activeCV}
-            className="btn-ghost flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {matchMutation.isPending ? <Spinner size="sm" /> : <Zap className="w-4 h-4" />}
-            {matchMutation.isPending ? 'Matching…' : 'Match with CV'}
-          </button>
-        </div>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3 my-5">
-          <div className="flex-1 h-px bg-white/5" />
-          <span className="text-xs text-slate-600 font-body">or</span>
-          <div className="flex-1 h-px bg-white/5" />
-        </div>
-
-        {/* Option B — Claude.ai */}
+        {/* ── LEFT COLUMN ── */}
         <div>
-          <p className="text-xs font-display font-semibold text-signal uppercase tracking-wider mb-1 flex items-center gap-1.5">
-            <Bot className="w-3.5 h-3.5" /> Option B — Claude.ai (AI-powered, free)
-          </p>
-          <p className="text-xs text-slate-500 font-body mb-4">
-            Claude reads your full CV and the job description and gives a much more accurate score with detailed reasoning. Takes ~30 seconds.
-          </p>
 
-          {/* Step 1 */}
-          <div className="mb-4">
-            <p className="text-xs font-display font-semibold text-white mb-2">
-              Step 1 — Copy the prompt below
+          {/* Job header card */}
+          <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 24, marginBottom: 16 }}>
+            {/* Avatar + title */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 14 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 10,
+                background: getAvatarBg(job.company), color: '#fff',
+                fontWeight: 700, fontSize: 18, flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: t.fontDisplay,
+              }}>
+                {companyInitial}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: t.ink, fontFamily: t.fontDisplay, lineHeight: 1.2 }}>
+                  {job.title}
+                </h1>
+                <p style={{ margin: '4px 0 0', fontSize: 14, color: t.inkMid, fontFamily: t.fontBody }}>
+                  {[job.company, job.location, job.job_type].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+            </div>
+
+            {/* Tech stack tags */}
+            {techStack.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                {techStack.map(tech => (
+                  <span
+                    key={tech}
+                    style={{
+                      background: '#F4F4F5', border: '1px solid #E4E4E7',
+                      borderRadius: 4, padding: '3px 8px', fontSize: 12,
+                      color: t.inkMid, fontFamily: t.fontBody,
+                    }}
+                  >
+                    {tech}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Action row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <a
+                href={job.url}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  background: t.violet, color: '#fff', borderRadius: 8,
+                  padding: '8px 18px', fontWeight: 600, fontSize: 14,
+                  fontFamily: t.fontDisplay, textDecoration: 'none',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                <ExternalLink style={{ width: 14, height: 14 }} />
+                Apply now
+              </a>
+              <select
+                value={job.status || 'new'}
+                onChange={e => statusMutation.mutate(e.target.value)}
+                disabled={statusMutation.isPending}
+                style={{
+                  border: `1px solid ${t.border}`, borderRadius: 8,
+                  padding: '8px 12px', fontSize: 14, fontFamily: t.fontBody,
+                  color: t.ink, background: t.surface, cursor: 'pointer', outline: 'none',
+                }}
+              >
+                {STATUSES.map(s => (
+                  <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => setConfirmDelete(true)}
+                style={{
+                  background: 'transparent', border: `1.5px solid ${t.red}`,
+                  borderRadius: 8, padding: '7px 14px', fontSize: 14,
+                  fontFamily: t.fontBody, color: t.red, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                <Trash2 style={{ width: 14, height: 14 }} />
+                Delete job
+              </button>
+            </div>
+          </div>
+
+          {/* AI Match Analysis card */}
+          {analysis && (
+            <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 24, marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: t.ink, fontFamily: t.fontDisplay }}>
+                  AI Match Analysis
+                </h2>
+                <span style={{ fontSize: 12, color: t.inkLight, fontFamily: t.fontBody }}>{activeCV ? activeCV.filename : ''}</span>
+              </div>
+
+              {analysis.summary && (
+                <p style={{ margin: '0 0 16px', fontSize: 14, color: t.inkMid, fontFamily: t.fontBody, lineHeight: 1.6 }}>
+                  {analysis.summary}
+                </p>
+              )}
+
+              {analysis.strengths?.length > 0 && (
+                <div style={{ background: '#F0FDF4', borderLeft: '3px solid #16A34A', borderRadius: 8, padding: 16, marginBottom: 12 }}>
+                  <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: '#16A34A', fontFamily: t.fontDisplay }}>
+                    Strengths
+                  </p>
+                  <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                    {analysis.strengths.map((s, i) => (
+                      <li
+                        key={i}
+                        style={{
+                          fontSize: 14, color: t.inkMid, fontFamily: t.fontBody,
+                          lineHeight: 1.6, display: 'flex', gap: 8,
+                          marginBottom: i < analysis.strengths.length - 1 ? 6 : 0,
+                        }}
+                      >
+                        <span style={{ color: '#16A34A', flexShrink: 0 }}>•</span>
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {analysis.gaps?.length > 0 && (
+                <div style={{ background: '#FEF2F2', borderLeft: '3px solid #DC2626', borderRadius: 8, padding: 16, marginBottom: 12 }}>
+                  <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: '#DC2626', fontFamily: t.fontDisplay }}>
+                    Gaps
+                  </p>
+                  <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                    {analysis.gaps.map((g, i) => (
+                      <li
+                        key={i}
+                        style={{
+                          fontSize: 14, color: t.inkMid, fontFamily: t.fontBody,
+                          lineHeight: 1.6, display: 'flex', gap: 8,
+                          marginBottom: i < analysis.gaps.length - 1 ? 6 : 0,
+                        }}
+                      >
+                        <span style={{ color: '#DC2626', flexShrink: 0 }}>•</span>
+                        {g}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {analysis.suggestions?.length > 0 && (
+                <div style={{ background: '#F5F3FF', borderLeft: '3px solid #7C3AED', borderRadius: 8, padding: 16 }}>
+                  <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: '#7C3AED', fontFamily: t.fontDisplay }}>
+                    Suggestions
+                  </p>
+                  <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+                    {analysis.suggestions.map((s, i) => (
+                      <li
+                        key={i}
+                        style={{
+                          fontSize: 14, color: t.inkMid, fontFamily: t.fontBody,
+                          lineHeight: 1.6, display: 'flex', gap: 8,
+                          marginBottom: i < analysis.suggestions.length - 1 ? 6 : 0,
+                        }}
+                      >
+                        <span style={{ color: '#7C3AED', flexShrink: 0 }}>•</span>
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CV Matching card */}
+          <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 24, marginBottom: 16 }}>
+            <h2 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: t.ink, fontFamily: t.fontDisplay }}>
+              Get a Match Score
+            </h2>
+
+            {!activeCV && (
+              <div style={{ background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8, padding: '10px 14px', color: '#92400E', fontSize: 13, fontFamily: t.fontBody, marginBottom: 16 }}>
+                No active CV found — go to the CV page and upload your PDF first.
+              </div>
+            )}
+
+            {/* Option A — instant keyword match */}
+            <div style={{ marginBottom: 20 }}>
+              <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: t.inkLight, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: t.fontDisplay }}>
+                Option A — Instant (keyword matching)
+              </p>
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: t.inkMid, fontFamily: t.fontBody }}>
+                Scores your CV against the job's tech stack and keywords locally. Fast but basic — no AI understanding.
+              </p>
+              <button
+                onClick={() => matchMutation.mutate()}
+                disabled={matchMutation.isPending || !activeCV}
+                style={{
+                  background: 'transparent', border: `1.5px solid ${t.border}`, borderRadius: 8,
+                  padding: '8px 16px', cursor: matchMutation.isPending || !activeCV ? 'not-allowed' : 'pointer',
+                  color: t.ink, fontFamily: t.fontBody, fontSize: 14,
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  opacity: matchMutation.isPending || !activeCV ? 0.4 : 1,
+                }}
+              >
+                {matchMutation.isPending ? <Spinner size="sm" /> : <Zap style={{ width: 16, height: 16 }} />}
+                {matchMutation.isPending ? 'Matching…' : 'Match with CV'}
+              </button>
+            </div>
+
+            {/* Divider */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>
+              <div style={{ flex: 1, height: 1, background: t.border }} />
+              <span style={{ fontSize: 12, color: t.inkLight, fontFamily: t.fontBody }}>or</span>
+              <div style={{ flex: 1, height: 1, background: t.border }} />
+            </div>
+
+            {/* Option B — Claude.ai */}
+            <div>
+              <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: t.violet, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: t.fontDisplay, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Bot style={{ width: 14, height: 14 }} /> Option B — Claude.ai (AI-powered, free)
+              </p>
+              <p style={{ margin: '0 0 16px', fontSize: 13, color: t.inkMid, fontFamily: t.fontBody }}>
+                Claude reads your full CV and the job description and gives a much more accurate score with detailed reasoning. Takes ~30 seconds.
+              </p>
+
+              {/* Step 1 */}
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: t.ink, fontFamily: t.fontDisplay }}>
+                  Step 1 — Copy the prompt below
+                </p>
+                <div style={{ position: 'relative' }}>
+                  <textarea
+                    readOnly
+                    value={prompt}
+                    style={{
+                      background: '#F9F9F8', border: `1px solid ${t.border}`, borderRadius: 8,
+                      padding: 12, fontFamily: 'monospace', fontSize: 12, color: t.ink,
+                      width: '100%', boxSizing: 'border-box', resize: 'vertical',
+                      minHeight: 144, paddingRight: 72,
+                    }}
+                  />
+                  <button
+                    onClick={copyPrompt}
+                    style={{
+                      position: 'absolute', top: 8, right: 8,
+                      background: 'transparent', border: `1px solid ${t.border}`,
+                      borderRadius: 6, padding: '4px 10px', fontSize: 12,
+                      color: t.inkMid, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      fontFamily: t.fontBody,
+                    }}
+                  >
+                    <Copy style={{ width: 12, height: 12 }} /> Copy
+                  </button>
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: t.ink, fontFamily: t.fontDisplay }}>
+                  Step 2 — Open Claude.ai and paste the prompt
+                </p>
+                <a
+                  href="https://claude.ai"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: t.violet, textDecoration: 'none', fontFamily: t.fontBody }}
+                >
+                  <ExternalLink style={{ width: 13, height: 13 }} /> Open Claude.ai
+                </a>
+                <p style={{ margin: '6px 0 0', fontSize: 13, color: t.inkMid, fontFamily: t.fontBody }}>
+                  Paste the prompt, send it, and wait for Claude to reply with a JSON block.
+                </p>
+              </div>
+
+              {/* Step 3 */}
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: t.ink, fontFamily: t.fontDisplay }}>
+                  Step 3 — Paste Claude's JSON response here
+                </p>
+                <textarea
+                  placeholder='{"score": 85, "summary": "...", "strengths": [...], "gaps": [...], "suggestions": [...]}'
+                  value={rawJson}
+                  onChange={e => handleJsonChange(e.target.value)}
+                  style={{
+                    background: '#F9F9F8', border: `1px solid ${t.border}`, borderRadius: 8,
+                    padding: 12, fontFamily: 'monospace', fontSize: 12, color: t.ink,
+                    width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: 96,
+                  }}
+                />
+                {parseError && (
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: t.red, fontFamily: t.fontBody }}>{parseError}</p>
+                )}
+                {parsedResult && (
+                  <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 8, background: t.violetLight, border: `1px solid ${t.violet}30` }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: t.violet, fontFamily: 'monospace' }}>Score: {parsedResult.score}%</p>
+                    {parsedResult.summary && (
+                      <p style={{ margin: '4px 0 0', fontSize: 13, color: t.inkMid, fontFamily: t.fontBody, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                        {parsedResult.summary}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Step 4 — Save Score */}
+              <button
+                onClick={saveScore}
+                disabled={!parsedResult || scoreMutation.isPending}
+                style={{
+                  background: t.violet, border: 'none', borderRadius: 8,
+                  padding: '8px 20px', fontSize: 14, fontWeight: 600, color: '#fff',
+                  cursor: !parsedResult || scoreMutation.isPending ? 'not-allowed' : 'pointer',
+                  fontFamily: t.fontDisplay, display: 'inline-flex', alignItems: 'center', gap: 8,
+                  opacity: !parsedResult || scoreMutation.isPending ? 0.5 : 1,
+                }}
+              >
+                {scoreMutation.isPending && <Spinner size="sm" />}
+                Save Score
+              </button>
+            </div>
+          </div>
+
+          {/* Cover Letter card */}
+          <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 24, marginBottom: 16 }}>
+            <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: t.ink, fontFamily: t.fontDisplay, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <FileText style={{ width: 18, height: 18, color: t.violet }} />
+              Generate Cover Letter
+            </h2>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: t.inkMid, fontFamily: t.fontBody }}>
+              Copy the prompt below, paste it into Claude.ai, and get a tailored cover letter in seconds.
             </p>
-            <div className="relative">
+
+            {!activeCV && (
+              <div style={{ background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8, padding: '10px 14px', color: '#92400E', fontSize: 13, fontFamily: t.fontBody, marginBottom: 16 }}>
+                No active CV found — upload your CV first.
+              </div>
+            )}
+
+            <div style={{ position: 'relative', marginBottom: 16 }}>
               <textarea
                 readOnly
-                className="input font-mono text-xs w-full h-36 resize-none pr-20 text-slate-400"
-                value={prompt}
+                value={coverLetterPrompt}
+                style={{
+                  background: '#F9F9F8', border: `1px solid ${t.border}`, borderRadius: 8,
+                  padding: 12, fontFamily: 'monospace', fontSize: 12, color: t.ink,
+                  width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: 120, paddingRight: 72,
+                }}
               />
               <button
-                className="absolute top-2 right-2 btn-ghost text-xs flex items-center gap-1 py-1 px-2"
-                onClick={copyPrompt}
+                onClick={copyCoverLetterPrompt}
+                style={{
+                  position: 'absolute', top: 8, right: 8,
+                  background: 'transparent', border: `1px solid ${t.border}`,
+                  borderRadius: 6, padding: '4px 10px', fontSize: 12,
+                  color: t.inkMid, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  fontFamily: t.fontBody,
+                }}
               >
-                <Copy className="w-3 h-3" /> Copy
+                <Copy style={{ width: 12, height: 12 }} /> Copy
               </button>
             </div>
-          </div>
 
-          {/* Step 2 */}
-          <div className="mb-4">
-            <p className="text-xs font-display font-semibold text-white mb-1">
-              Step 2 — Open Claude.ai and paste the prompt
-            </p>
             <a
               href="https://claude.ai"
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-signal hover:text-signal/80 transition-colors"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: t.violet, color: '#fff', borderRadius: 8,
+                padding: '8px 18px', fontSize: 14, fontWeight: 600,
+                fontFamily: t.fontDisplay, textDecoration: 'none',
+              }}
             >
-              <ExternalLink className="w-3 h-3" /> Open Claude.ai
+              <ExternalLink style={{ width: 14, height: 14 }} /> Open Claude.ai
             </a>
-            <p className="text-xs text-slate-500 font-body mt-1">
-              Paste the prompt, send it, and wait for Claude to reply with a JSON block.
-            </p>
           </div>
 
-          {/* Step 3 */}
-          <div className="mb-4">
-            <p className="text-xs font-display font-semibold text-white mb-2">
-              Step 3 — Paste Claude's JSON response here
+          {/* CV Tailoring card */}
+          <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 24, marginBottom: 16 }}>
+            <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: t.ink, fontFamily: t.fontDisplay, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <PenLine style={{ width: 18, height: 18, color: t.violet }} />
+              Tailor Your CV
+            </h2>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: t.inkMid, fontFamily: t.fontBody }}>
+              Copy the prompt below, paste it into Claude.ai, and get a revised headline, rewritten summary, and ATS keywords tailored to this role.
             </p>
-            <textarea
-              className="input font-mono text-xs w-full h-24 resize-none"
-              placeholder='{"score": 85, "summary": "...", "strengths": [...], "gaps": [...], "suggestions": [...]}'
-              value={rawJson}
-              onChange={e => handleJsonChange(e.target.value)}
-            />
-            {parseError && (
-              <p className="text-xs text-red-400 mt-1.5 font-body">{parseError}</p>
-            )}
-            {parsedResult && (
-              <div className="mt-2 px-3 py-2.5 rounded-lg bg-signal-muted border border-signal/20">
-                <p className="text-xs text-signal font-semibold font-mono">Score: {parsedResult.score}%</p>
-                {parsedResult.summary && (
-                  <p className="text-xs text-slate-400 mt-1 font-body line-clamp-2">{parsedResult.summary}</p>
-                )}
+
+            {!activeCV && (
+              <div style={{ background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8, padding: '10px 14px', color: '#92400E', fontSize: 13, fontFamily: t.fontBody, marginBottom: 16 }}>
+                No active CV found — upload your CV first.
               </div>
             )}
+
+            <div style={{ position: 'relative', marginBottom: 16 }}>
+              <textarea
+                readOnly
+                value={cvTailoringPrompt}
+                style={{
+                  background: '#F9F9F8', border: `1px solid ${t.border}`, borderRadius: 8,
+                  padding: 12, fontFamily: 'monospace', fontSize: 12, color: t.ink,
+                  width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: 120, paddingRight: 72,
+                }}
+              />
+              <button
+                onClick={copyCvTailoringPrompt}
+                style={{
+                  position: 'absolute', top: 8, right: 8,
+                  background: 'transparent', border: `1px solid ${t.border}`,
+                  borderRadius: 6, padding: '4px 10px', fontSize: 12,
+                  color: t.inkMid, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  fontFamily: t.fontBody,
+                }}
+              >
+                <Copy style={{ width: 12, height: 12 }} /> Copy
+              </button>
+            </div>
+
+            <a
+              href="https://claude.ai"
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: t.violet, color: '#fff', borderRadius: 8,
+                padding: '8px 18px', fontSize: 14, fontWeight: 600,
+                fontFamily: t.fontDisplay, textDecoration: 'none',
+              }}
+            >
+              <ExternalLink style={{ width: 14, height: 14 }} /> Open Claude.ai
+            </a>
           </div>
 
-          {/* Step 4 */}
-          <button
-            onClick={saveScore}
-            disabled={!parsedResult || scoreMutation.isPending}
-            className="btn-primary flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {scoreMutation.isPending && <Spinner size="sm" />}
-            Save Score
-          </button>
+          {/* About the role card */}
+          {descriptionHtml && (
+            <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 24 }}>
+              <h2 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: t.ink, fontFamily: t.fontDisplay }}>
+                About the role
+              </h2>
+              <div
+                className="job-description"
+                dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* ── RIGHT SIDEBAR ── */}
+        <div>
+
+          {/* Match Score card */}
+          <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 24, marginBottom: 16 }}>
+            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 600, color: t.inkLight, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: t.fontDisplay }}>
+              MATCH SCORE
+            </p>
+            {job.score != null ? (
+              <>
+                <div style={{ fontSize: 48, fontWeight: 700, color: scoreColor, lineHeight: 1, marginBottom: 12, fontFamily: t.fontDisplay }}>
+                  {Math.round(job.score)}
+                </div>
+                <div style={{ height: 8, borderRadius: 4, background: '#E4E2DC', marginBottom: 8, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${job.score}%`, background: scoreColor, borderRadius: 4, transition: 'width 0.3s ease' }} />
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: t.inkMid, fontFamily: t.fontBody }}>
+                  {scoreLabel}
+                </p>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 48, fontWeight: 700, color: t.inkLight, lineHeight: 1, marginBottom: 12, fontFamily: t.fontDisplay }}>
+                  —
+                </div>
+                <p style={{ margin: 0, fontSize: 13, color: t.inkMid, fontFamily: t.fontBody }}>No score yet</p>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: t.inkMid, fontFamily: t.fontBody }}>Click Match with CV</p>
+              </>
+            )}
+          </div>
+
+          {/* Details card */}
+          <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, padding: 24, marginBottom: 16 }}>
+            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 600, color: t.inkLight, textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: t.fontDisplay }}>
+              DETAILS
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: t.inkLight, fontFamily: t.fontBody }}>Platform</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: t.ink, fontFamily: t.fontBody }}>{getPlatformLabel(job.platform)}</span>
+              </div>
+              {job.location && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, color: t.inkLight, fontFamily: t.fontBody }}>Location</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: t.ink, fontFamily: t.fontBody, textAlign: 'right', maxWidth: 160 }}>{job.location}</span>
+                </div>
+              )}
+              {job.posted_at && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, color: t.inkLight, fontFamily: t.fontBody }}>Posted</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: t.ink, fontFamily: t.fontBody }}>{formatDateFull(job.posted_at)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
         </div>
       </div>
-
-      {/* AI Analysis */}
-      {analysis && (
-        <div className="card p-6 mb-4 space-y-5">
-          <h2 className="font-display font-semibold text-white">AI Analysis</h2>
-
-          {analysis.summary && (
-            <p className="text-sm text-slate-200 font-body leading-relaxed border-l-2 border-signal/50 pl-4 py-1">
-              {analysis.summary}
-            </p>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {analysis.strengths?.length > 0 && (
-              <div>
-                <p className="text-xs font-display font-semibold text-signal uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-                  <CheckCircle className="w-3.5 h-3.5" /> Strengths
-                </p>
-                <ul className="space-y-1.5">
-                  {analysis.strengths.map((s, i) => (
-                    <li key={i} className="text-sm text-slate-300 font-body leading-relaxed flex gap-2">
-                      <span className="text-signal mt-0.5 flex-shrink-0">·</span>
-                      <span>{s}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {analysis.gaps?.length > 0 && (
-              <div>
-                <p className="text-xs font-display font-semibold text-red-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-                  <XCircle className="w-3.5 h-3.5" /> Gaps
-                </p>
-                <ul className="space-y-1.5">
-                  {analysis.gaps.map((g, i) => (
-                    <li key={i} className="text-sm text-slate-300 font-body leading-relaxed flex gap-2">
-                      <span className="text-red-400 mt-0.5 flex-shrink-0">·</span>
-                      <span>{g}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {analysis.suggestions?.length > 0 && (
-              <div>
-                <p className="text-xs font-display font-semibold text-amber-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-                  <Lightbulb className="w-3.5 h-3.5" /> Suggestions
-                </p>
-                <ul className="space-y-1.5">
-                  {analysis.suggestions.map((s, i) => (
-                    <li key={i} className="text-sm text-slate-300 font-body leading-relaxed flex gap-2">
-                      <span className="text-amber-400 mt-0.5 flex-shrink-0">·</span>
-                      <span>{s}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Job description */}
-      {descriptionHtml && (
-        <div className="card p-6">
-          <h2 className="font-display font-semibold text-white mb-4">Job Description</h2>
-          <div
-            className="job-description"
-            dangerouslySetInnerHTML={{ __html: descriptionHtml }}
-          />
-        </div>
-      )}
 
       <ConfirmDialog
         open={confirmDelete}

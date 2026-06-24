@@ -43,10 +43,10 @@ class JobicyScraper(BaseScraper):
                             entry.get("jobTitle", "") + " " + description[:500]
                         ),
                         location_region=self._map_region(entry.get("jobGeo", "")),
-                        tech_stack=self._extract_tech_stack(description),
+                        tech_stack=self.extract_tech_stack(description),
                         salary=self._extract_salary(entry),
                         posted_at=posted_at,
-                        raw=entry,
+                        raw={**entry, "description": description},
                     )
                     jobs.append(job)
 
@@ -64,17 +64,20 @@ class JobicyScraper(BaseScraper):
         if not value:
             return None
         try:
-            # API returns "2024-01-15 10:30:00" (UTC)
-            return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        except ValueError:
+            # API now returns ISO 8601: "2026-06-24T14:26:42+00:00"
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except Exception:
             try:
-                dt = datetime.fromisoformat(str(value))
-                return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+                # Legacy format: "2024-01-15 10:30:00" (UTC)
+                return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
             except Exception:
                 return None
 
-    def _map_job_type(self, raw: str) -> str:
-        return self.normalize_job_type(raw.lower()) or "remote"
+    def _map_job_type(self, raw) -> str:
+        if isinstance(raw, list):
+            raw = raw[0] if raw else ""
+        return self.normalize_job_type(str(raw).lower()) or "remote"
 
     def _map_region(self, geo: str) -> str:
         g = geo.lower()
@@ -103,13 +106,3 @@ class JobicyScraper(BaseScraper):
             pass
         return None
 
-    def _extract_tech_stack(self, text: str) -> List[str]:
-        known_tech = [
-            "Python", "JavaScript", "TypeScript", "Go", "Rust", "Java", "Kotlin",
-            "Ruby", "PHP", "C++", "C#", "Swift", "React", "Vue", "Angular",
-            "Node.js", "FastAPI", "Django", "Flask", "Laravel", "Rails",
-            "Docker", "Kubernetes", "AWS", "Azure", "GCP", "PostgreSQL",
-            "MySQL", "MongoDB", "Redis", "GraphQL", "REST", "gRPC",
-        ]
-        text_lower = text.lower()
-        return [t for t in known_tech if t.lower() in text_lower][:10]

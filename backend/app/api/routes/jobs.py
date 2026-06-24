@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, asc
 from slowapi import Limiter
@@ -10,6 +10,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.config import get_settings
 from app.models.models import Job, CVVersion, User, UserFilter
 from app.schemas.schemas import (
     JobListItem, JobDetail, JobStatusUpdate, JobScoreUpdate,
@@ -42,6 +43,7 @@ def list_jobs(
     order: str = Query(default="desc", description="Sort direction: asc or desc"),
     platform: Optional[str] = Query(default=None, description="Filter by platform key e.g. himalayas"),
     status: Optional[str] = Query(default=None, description="Filter by status: new / interested / applied / skipped"),
+    experience_level: Optional[str] = Query(default=None, description="Filter by experience level: junior / mid / senior"),
     score_min: Optional[float] = Query(default=None, description="Minimum score (0–100)"),
     score_max: Optional[float] = Query(default=None, description="Maximum score (0–100)"),
     title: Optional[str] = Query(default=None, description="Case-insensitive title keyword search"),
@@ -53,7 +55,7 @@ def list_jobs(
     if order not in VALID_ORDERS:
         order = "desc"
 
-    query = db.query(Job).filter(Job.is_deleted == False, Job.user_id == current_user.id)
+    query = db.query(Job).filter(Job.user_id == current_user.id)
 
     # Apply saved max_age_hours preference
     user_filter = db.query(UserFilter).filter(UserFilter.user_id == current_user.id).first()
@@ -65,6 +67,8 @@ def list_jobs(
         query = query.filter(Job.platform == platform)
     if status:
         query = query.filter(Job.status == status)
+    if experience_level:
+        query = query.filter(Job.experience_level == experience_level)
     if score_min is not None:
         query = query.filter(Job.score >= score_min)
     if score_max is not None:
@@ -101,7 +105,7 @@ def get_job(
     current_user: User = Depends(get_current_user),
 ):
     job = db.query(Job).filter(
-        Job.id == job_id, Job.is_deleted == False, Job.user_id == current_user.id
+        Job.id == job_id, Job.user_id == current_user.id
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -120,7 +124,7 @@ def save_job_score(
     current_user: User = Depends(get_current_user),
 ):
     job = db.query(Job).filter(
-        Job.id == job_id, Job.is_deleted == False, Job.user_id == current_user.id
+        Job.id == job_id, Job.user_id == current_user.id
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -147,7 +151,7 @@ def update_job_status(
             detail=f"Invalid status. Must be one of: {VALID_STATUSES}",
         )
     job = db.query(Job).filter(
-        Job.id == job_id, Job.is_deleted == False, Job.user_id == current_user.id
+        Job.id == job_id, Job.user_id == current_user.id
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -205,7 +209,7 @@ def match_job_with_cv(
     current_user: User = Depends(get_current_user),
 ):
     job = db.query(Job).filter(
-        Job.id == job_id, Job.is_deleted == False, Job.user_id == current_user.id
+        Job.id == job_id, Job.user_id == current_user.id
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -242,7 +246,7 @@ def match_job_with_cv(
         "Returns a Celery task ID — poll `GET /api/jobs/task/{task_id}` for status."
     ),
 )
-@limiter.limit("5/hour")
+@limiter.limit(lambda: get_settings().TRIGGER_RATE_LIMIT)
 def trigger_pipeline(
     request: Request,
     current_user: User = Depends(get_current_user),
@@ -277,8 +281,10 @@ def get_task_status(
     if result.status not in ("PENDING",) and task_user_id and task_user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    result_payload = result.result if result.ready() else None
     return TaskStatusResponse(
         task_id=task_id,
         status=result.status,
-        message=str(result.result) if result.ready() else None,
+        message=str(result_payload) if result_payload and not isinstance(result_payload, dict) else None,
+        result=result_payload if isinstance(result_payload, dict) else None,
     )
