@@ -55,8 +55,9 @@ services:
       SCHEDULER_TIMEZONE: Europe/Madrid
       DAILY_JOB_HOUR: "10"
       DAILY_JOB_MINUTE: "0"
-      JOB_FETCH_WINDOW_HOURS: "25"
-      JOB_RETENTION_DAYS: "4"
+      JOB_FETCH_WINDOW_HOURS: "168"
+      JOB_RETENTION_DAYS: "14"
+      TRIGGER_RATE_LIMIT: "50/hour"
       CV_UPLOAD_DIR: /cv_data
       CORS_ORIGINS: ${NAS_URL}
       FRONTEND_URL: ${NAS_URL}
