@@ -1,0 +1,124 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "8031:80"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        printf ':80 {\n  encode gzip\n  reverse_proxy /api/* fastapi:8000\n  reverse_proxy /* frontend:80\n}\n' > /etc/caddy/Caddyfile
+        caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    depends_on:
+      - fastapi
+      - frontend
+    networks:
+      - app_network
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jobradar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: jobradar
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobradar -d jobradar"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - app_network
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  fastapi:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment: &appenv
+      APP_ENV: production
+      APP_NAME: JobRadar
+      DEBUG: "false"
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+      DATABASE_URL: postgresql://jobradar:${POSTGRES_PASSWORD}@postgres:5432/jobradar
+      REDIS_URL: redis://redis:6379/0
+      SCHEDULER_TIMEZONE: Europe/Madrid
+      DAILY_JOB_HOUR: "10"
+      DAILY_JOB_MINUTE: "0"
+      JOB_FETCH_WINDOW_HOURS: "25"
+      JOB_RETENTION_DAYS: "4"
+      CV_UPLOAD_DIR: /cv_data
+      CORS_ORIGINS: ${NAS_URL}
+      FRONTEND_URL: ${NAS_URL}
+      SMTP_HOST: smtp.example.com
+      SMTP_PORT: "587"
+      SMTP_USER: none
+      SMTP_PASSWORD: none
+      SMTP_FROM: noreply@example.com
+    volumes:
+      - cv_data:/cv_data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - app_network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=1
+    environment: *appenv
+    volumes:
+      - cv_data:/cv_data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - app_network
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    environment: *appenv
+    volumes:
+      - cv_data:/cv_data
+    depends_on:
+      - redis
+      - celery-worker
+    networks:
+      - app_network
+
+volumes:
+  pg_data:
+  cv_data:
+
+networks:
+  app_network:
+    driver: bridge
