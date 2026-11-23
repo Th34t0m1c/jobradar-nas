@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import List
 from app.services.scrapers.base import BaseScraper, NormalizedJob
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ class HimalayanScraper(BaseScraper):
     async def fetch(self, from_dt: datetime, to_dt: datetime) -> List[NormalizedJob]:
         jobs = []
         offset = 0
-        limit = 50
+        limit = 20
 
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -69,6 +70,7 @@ class HimalayanScraper(BaseScraper):
                         break
 
                     offset += limit
+                    await asyncio.sleep(1.1)
 
         except Exception as e:
             logger.error(f"Himalayas: Fetch failed: {e}")
